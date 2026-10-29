@@ -1,0 +1,2810 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Homelab</title>
+<meta name="description" content="Interaktive Übersicht meines Homelabs: zwei Proxmox-Server, OPNsense mit Zenarmor, sechs VLANs, Proxmox Backup Server und eine abgeschottete Automatisierungs-VM (agent40).">
+<style>
+:root {
+  --bg:       #000000;
+  --bg2:      #0a0a0a;
+  --bg3:      #161616;
+  --border:   #2a2a2a;
+  --text:     #e5e5e5;
+  --muted:    #707070;
+  --blue:     #4d9eff;
+  --green:    #5dd674;
+  --yellow:   #f5c842;
+  --purple:   #b58aff;
+  --red:      #ff5a6c;
+  --orange:   #ff8a5c;
+  --teal:     #4dd6c2;
+  --indigo:   #818cf8;
+  --font: 'SF Mono','JetBrains Mono','Cascadia Code','Fira Code',Consolas,monospace;
+  --mono: 'SF Mono','JetBrains Mono','Cascadia Code','Fira Code',Consolas,monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  min-height: 100vh;
+  min-height: 100dvh;
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ── HEADER ───────────────────────────────────────────────── */
+header {
+  border-bottom: 1px solid #4a4a4a;
+  padding: 14px 24px;
+  padding-top: max(14px, env(safe-area-inset-top));
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.header-logo {
+  width: 34px; height: 34px;
+  background: linear-gradient(135deg, #1f4788, #3f51b5);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+header h1 {
+  font-size: 17px; font-weight: 700; letter-spacing: 0;
+  color: var(--purple);
+}
+header h1::after {
+  content: '_';
+  color: var(--purple);
+  margin-left: 4px;
+  animation: cli-caret 1.1s steps(1) infinite;
+}
+@keyframes cli-caret { 50% { opacity: 0; } }
+header p  { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-left: 4px; }
+.header-status {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted);
+}
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: blink 3s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ── NAV ──────────────────────────────────────────────────── */
+nav {
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+nav::-webkit-scrollbar { display: none; }
+.tab-btn {
+  background: none; border: none;
+  color: #c0c0c0;
+  cursor: pointer;
+  font-size: 13px; font-family: var(--font); font-weight: 500;
+  padding: 11px 16px;
+  min-height: 44px;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+  display: flex; align-items: center; gap: 6px;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn:active { color: var(--text); }
+.tab-btn.active { color: var(--text); border-bottom-color: var(--purple); }
+
+/* ── MAIN LAYOUT ──────────────────────────────────────────── */
+main { padding: 24px; max-width: 1440px; margin: 0 auto; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ── TOPOLOGY ─────────────────────────────────────────────── */
+.topo-legend {
+  display: flex; flex-wrap: wrap; gap: 16px;
+  padding: 10px 14px; margin-bottom: 16px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #c0c0c0; }
+.legend-toggle {
+  margin-left: auto;
+  background: var(--bg3); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  font-family: var(--font); font-size: 11px; font-weight: 500;
+  padding: 4px 10px; cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.legend-toggle:hover { background: var(--bg); border-color: var(--blue); color: var(--blue); }
+.legend-toggle.active {
+  background: var(--blue); border-color: var(--blue); color: var(--bg);
+}
+.legend-toggle.active:hover { background: var(--blue); filter: brightness(1.1); color: var(--bg); }
+.legend-line  { width: 24px; height: 3px; border-radius: 1.5px; filter: brightness(1.15) saturate(1.1); box-shadow: 0 0 4px currentColor; }
+
+.rollout-strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 9px 14px; margin-bottom: 14px;
+  background: rgba(181,138,255,.04); border: 1px solid var(--border); border-radius: 6px;
+  font-size: 11px;
+}
+.rollout-title { font-weight: 700; color: var(--text); margin-right: 4px; }
+.rb-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+}
+.rb-live     { background: rgba(93,214,116,.16);  color: var(--green);  border: 1px solid rgba(93,214,116,.4); }
+.rb-rollout  { background: rgba(245,200,66,.16);  color: var(--yellow); border: 1px solid rgba(245,200,66,.4); }
+.rb-reserved { background: rgba(192,192,192,.12); color: #c0c0c0;       border: 1px solid rgba(192,192,192,.3); }
+
+.topo-wrapper { position: relative; overflow: visible; }
+#conn-svg {
+  position: absolute; top: 0; left: 0;
+  pointer-events: none; overflow: visible; z-index: 1;
+}
+
+.topo-layout {
+  display: flex; flex-direction: column; gap: 14px;
+  position: relative; z-index: 10;
+  align-items: center;
+}
+
+/* Rows */
+.topo-row {
+  display: flex; justify-content: center;
+  align-items: flex-start; gap: 10px; flex-wrap: wrap;
+}
+
+/* Boundary boxes */
+.bx {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px; position: relative;
+}
+.bx-label {
+  position: absolute; top: -9px; left: 10px;
+  background: var(--bg); padding: 0 6px;
+  font-size: 10px; font-family: var(--mono); color: var(--muted);
+  white-space: nowrap; pointer-events: none;
+}
+.bx-hardware { border-color: rgba(181,138,255,.9);  background: rgba(181,138,255,.06); }
+.bx-proxmox  { border-color: rgba(129,140,248,.8);  background: rgba(129,140,248,.05);  min-width: 0; }
+.bx-vlan10   { border-color: rgba(93,214,116,.5);   background: rgba(93,214,116,.04);   min-width: 175px; align-self: flex-start; }
+.bx-vlan20   { border-color: rgba(77,214,194,.5);   background: rgba(77,214,194,.04);   min-width: 175px; align-self: flex-start; }
+.bx-vlan30   { border-color: rgba(129,140,248,.5);  background: rgba(129,140,248,.04);  min-width: 170px; align-self: stretch; }
+.bx-vlan40   { border-color: rgba(255,90,108,.5);   background: rgba(255,90,108,.04);   min-width: 240px; align-self: flex-start; }
+.bx-vlan50   { border-color: rgba(181,138,255,.5);  background: rgba(181,138,255,.04);  min-width: 170px; align-self: stretch; }
+.bx-vlan60   { border-color: rgba(255,90,108,.45);  background: rgba(255,90,108,.03);   min-width: 170px; align-self: stretch; }
+.bx-agent40-vm      { border-color: rgba(255,138,92,.5);   background: rgba(255,138,92,.04); }
+.bx-agent40-scripts { border-color: rgba(245,200,66,.55);  background: rgba(245,200,66,.04);   min-width: 126px; }
+.bx-deploy          { border-color: rgba(77,158,255,.55);  background: rgba(77,158,255,.04);   min-width: 110px; }
+
+.hflex { display: flex; gap: 10px; align-items: flex-start; }
+.vflex { display: flex; flex-direction: column; gap: 8px; }
+
+/* Nodes */
+.node {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 3px; padding: 8px 10px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 6px; cursor: pointer;
+  transition: all .15s; min-width: 84px; min-height: 44px; text-align: center;
+  position: relative; user-select: none;
+}
+.node:hover {
+  border-color: var(--blue); background: var(--bg3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(88,166,255,.12);
+}
+.node:active {
+  background: var(--bg3);
+  transform: translateY(-1px);
+}
+.node.selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(88,166,255,.2);
+}
+.n-icon  { font-size: 18px; line-height: 1; }
+.n-label { font-size: 11px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.n-sub   { font-size: 10px; color: var(--muted); font-family: var(--mono); line-height: 1.2; }
+.n-badge {
+  font-size: 9px; padding: 1px 5px; border-radius: 3px;
+  font-family: var(--mono); font-weight: 700; letter-spacing: .3px; margin-top: 1px;
+}
+.b-ext  { background: rgba(88,166,255,.15);  color: var(--blue); }
+.b-vm   { background: rgba(63,185,80,.2);    color: var(--green); }
+.b-lxc  { background: rgba(210,153,34,.2);   color: var(--yellow); }
+.b-svc  { background: rgba(255,123,114,.2);  color: var(--orange); }
+.b-fw   { background: rgba(248,81,73,.2);    color: var(--red); }
+.b-host { background: rgba(181,138,255,.2);  color: var(--purple); }
+.b-cli  { background: rgba(129,140,248,.2);  color: var(--indigo); }
+
+/* Node type accent borders */
+.node.ext   { border-color: #1f6feb; }
+.node.rtr   { border-color: #388bfd; }
+.node.vm    { border-color: #2ea043; }
+.node.lxc   { border-color: #9e6a03; }
+.node.sw    { border-color: #8b5cf6; }
+.node.svc   { border-color: #b44f38; }
+.node.fw    { border-color: #8d1f1f; }
+.node.host  { border-color: #6d28d9; }
+.node.cli   { border-color: #4f46e5; }
+
+/* ── DETAIL PANEL ─────────────────────────────────────────── */
+#detail-panel {
+  position: fixed; right: -380px; top: 0;
+  width: 360px; height: 100vh; height: 100dvh;
+  background: var(--bg2); border-left: 1px solid var(--border);
+  z-index: 500; overflow-y: auto;
+  transition: right .25s cubic-bezier(.4,0,.2,1);
+  display: flex; flex-direction: column;
+}
+#detail-panel.open { right: 0; }
+
+.panel-head {
+  padding: 18px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 12px;
+  flex-shrink: 0;
+}
+.panel-ico  { font-size: 26px; flex-shrink: 0; }
+.panel-meta { flex: 1; min-width: 0; }
+.panel-meta h2 { font-size: 15px; font-weight: 600; }
+.panel-meta .panel-type { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.panel-close {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 16px; padding: 4px 6px; border-radius: 4px;
+  min-width: 44px; min-height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: color .15s, background .15s;
+}
+.panel-close:hover { color: var(--text); background: var(--bg3); }
+.panel-close:active { color: var(--text); background: var(--bg3); }
+
+.panel-body {
+  padding: 18px;
+  padding-bottom: max(18px, calc(18px + env(safe-area-inset-bottom)));
+  overflow-y: auto; flex: 1;
+}
+.panel-section { margin-bottom: 18px; }
+.panel-section:last-child { margin-bottom: 0; }
+.panel-section h3 {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px; color: var(--muted);
+  margin-bottom: 8px;
+}
+.kv-grid {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 5px 10px; align-items: baseline;
+}
+.kv-k { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.kv-v { font-size: 11px; font-family: var(--mono); color: var(--text); word-break: break-word; }
+.panel-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.panel-list li {
+  font-size: 11px; padding: 5px 10px;
+  background: var(--bg3); border-radius: 4px;
+  border-left: 2px solid var(--border);
+}
+.pl-g { border-left-color: var(--green); }
+.pl-b { border-left-color: var(--blue); }
+.pl-y { border-left-color: var(--yellow); }
+.pl-r { border-left-color: var(--red); }
+.pl-p { border-left-color: var(--purple); }
+
+.conn-list { display: flex; flex-direction: column; gap: 6px; }
+.conn-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 8px; background: var(--bg3); border-radius: 4px;
+  font-size: 11px;
+}
+.conn-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+.conn-arrow { font-family: var(--mono); font-weight: 700; flex-shrink: 0; }
+.conn-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.conn-name { font-weight: 600; color: var(--text); }
+.conn-desc { font-size: 10px; color: var(--muted); line-height: 1.4; }
+
+/* ── VLANS TAB ────────────────────────────────────────────── */
+.vlan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+}
+.vlan-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+}
+.vlan-card-head {
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.vlan-tag {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  padding: 3px 8px; border-radius: 4px;
+  min-width: 48px; text-align: center;
+}
+.vlan-card-head h3 { font-size: 14px; font-weight: 600; }
+.vlan-subnet { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+.vlan-body { padding: 12px 14px; }
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.chip {
+  font-size: 10px; font-family: var(--mono); padding: 2px 7px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+}
+.fw-table { width: 100%; border-collapse: collapse; }
+.fw-table th {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--muted); padding: 5px 7px; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.fw-table td { font-size: 11px; font-family: var(--mono); padding: 5px 7px; border-bottom: 1px solid var(--bg3); }
+.fw-table tr:last-child td { border-bottom: none; }
+.a-pass  { color: var(--green); font-weight: 700; }
+.a-block { color: var(--red);   font-weight: 700; }
+
+/* ── AGENT40 TAB ──────────────────────────────────────────── */
+.section-heading {
+  font-size: 15px; font-weight: 600; margin-bottom: 14px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.report-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px; margin-bottom: 24px;
+}
+.report-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px;
+}
+.rc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rc-head h3 { font-size: 13px; font-weight: 600; }
+.rc-cron {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  background: var(--bg3); padding: 2px 7px; border-radius: 3px; margin-left: auto;
+}
+.rc-desc { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
+
+.pipeline {
+  display: flex; align-items: stretch; flex-wrap: wrap; gap: 0;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px; overflow-x: auto;
+  margin-bottom: 24px;
+}
+.p-step {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 3px; padding: 10px 12px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; min-width: 100px; text-align: center; flex-shrink: 0;
+}
+.p-icon   { font-size: 16px; }
+.p-name   { font-size: 11px; font-weight: 600; }
+.p-detail { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+.p-arrow  { font-size: 16px; color: var(--muted); padding: 0 6px; align-self: center; flex-shrink: 0; }
+
+/* ── TROUBLESHOOTING ──────────────────────────────────────── */
+.trouble-block { margin-bottom: 28px; }
+.trouble-heading {
+  font-size: 14px; font-weight: 600; margin-bottom: 12px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.accordion { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.acc-item  { border-bottom: 1px solid var(--border); }
+.acc-item:last-child { border-bottom: none; }
+
+.acc-trigger {
+  width: 100%; background: var(--bg2); border: none;
+  color: var(--text); cursor: pointer;
+  font-size: 13px; font-family: var(--font); font-weight: 500;
+  padding: 13px 14px;
+  min-height: 48px;
+  display: flex; align-items: center; gap: 10px;
+  text-align: left; transition: background .15s;
+}
+.acc-trigger:hover { background: var(--bg3); }
+.acc-trigger:active { background: var(--bg3); }
+.acc-trigger.open  { background: var(--bg3); }
+
+.sev { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.sev-h { background: var(--red); }
+.sev-m { background: var(--yellow); }
+.sev-l { background: var(--green); }
+
+.acc-chevron { margin-left: auto; font-size: 11px; color: var(--muted); transition: transform .2s; }
+.acc-trigger.open .acc-chevron { transform: rotate(180deg); }
+
+.status-pill {
+  font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600;
+}
+.s-fixed   { background: rgba(63,185,80,.2);  color: var(--green); }
+.s-known   { background: rgba(210,153,34,.2); color: var(--yellow); }
+.s-pending { background: rgba(88,166,255,.15);color: var(--blue); }
+
+.acc-body {
+  display: none; padding: 14px;
+  background: var(--bg2);
+}
+.acc-body.open { display: block; }
+.issue-box {
+  background: var(--bg3); border-radius: 6px; padding: 14px;
+}
+.issue-box h4 {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--muted); margin-bottom: 6px;
+}
+.issue-box p { font-size: 12px; color: var(--text); line-height: 1.55; margin-bottom: 8px; }
+.issue-box p:last-child { margin-bottom: 0; }
+.code-block {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--bg); color: var(--green);
+  padding: 10px 12px; border-radius: 4px;
+  border: 1px solid var(--border);
+  overflow-x: auto; white-space: pre;
+  margin-top: 8px; display: block;
+}
+.ic { font-family: var(--mono); font-size: 11px; background: var(--bg); padding: 1px 5px; border-radius: 3px; }
+
+/* ── DOCUMENTATION TAB ────────────────────────────────────── */
+#tab-docs { max-width: 980px; margin: 0 auto; }
+
+.docs-hero {
+  position: relative;
+  background: linear-gradient(135deg, rgba(31,71,136,.22), rgba(63,75,191,.06));
+  border: 1px solid #3f4bbf;
+  border-radius: 12px;
+  padding: 22px 24px;
+  margin-bottom: 32px;
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+.docs-hero-ico {
+  font-size: 36px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.docs-hero h2  { font-size: 20px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.3px; }
+.docs-lead     { font-size: 13px; line-height: 1.7; color: var(--text); }
+.docs-p        { font-size: 13px; line-height: 1.65; color: var(--text); margin-bottom: 12px; }
+.docs-p:last-child { margin-bottom: 0; }
+.docs-muted    { color: var(--muted); font-size: 12px; line-height: 1.55; margin: 6px 0 0; }
+
+#tab-docs .section-heading {
+  font-size: 15px;
+  margin-top: 32px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+#tab-docs .section-heading:first-of-type { margin-top: 0; }
+
+.section-heading-sm {
+  font-size: 11px; font-weight: 700;
+  margin-top: 18px; margin-bottom: 10px;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+}
+
+#tab-docs .panel-list { gap: 6px; margin-bottom: 6px; }
+#tab-docs .panel-list li { padding: 7px 12px; font-size: 12px; line-height: 1.55; }
+.tab-link { color: var(--blue); cursor: pointer; text-decoration: none; border-bottom: 1px dashed transparent; transition: border-color .15s ease; }
+.tab-link:hover { border-bottom-color: var(--blue); }
+
+.docs-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  border: 1px solid #4a4a4a;
+  background: #14141a;
+}
+.docs-table {
+  width: 100%; border-collapse: collapse;
+  background: transparent; border: none; border-radius: 0;
+  overflow: visible; margin: 0;
+}
+.docs-table th {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: #d4d4d4;
+  padding: 10px 12px; text-align: left; white-space: nowrap;
+  background: #1f1a2e;
+  border-bottom: 1px solid #5a4a85;
+}
+.docs-table td {
+  font-size: 12px; padding: 9px 12px;
+  border-bottom: 1px solid #3a3a3a;
+  color: var(--text);
+  vertical-align: top;
+}
+.docs-table tr:hover td { background: rgba(181,138,255,.04); }
+.docs-table tr:last-child td { border-bottom: none; }
+.docs-table td:first-child { font-weight: 600; white-space: nowrap; }
+
+.docs-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.docs-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px 18px;
+}
+.docs-card h4 {
+  font-size: 13px; font-weight: 600; margin-bottom: 10px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--bg3);
+}
+.docs-card p  { font-size: 12px; line-height: 1.55; color: var(--text); }
+.docs-card ul {
+  list-style: none; display: flex; flex-direction: column; gap: 6px;
+}
+.docs-card ul li {
+  font-size: 12px; line-height: 1.5; color: var(--text);
+  padding-left: 14px; position: relative;
+}
+.docs-card ul li::before {
+  content: "▸"; position: absolute; left: 0;
+  color: var(--blue); font-size: 10px; top: 3px;
+}
+
+.docs-ol {
+  list-style: none;
+  counter-reset: step;
+  padding: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  margin-bottom: 14px;
+}
+.docs-ol li {
+  font-size: 13px; line-height: 1.55; color: var(--text);
+  padding: 10px 12px 10px 40px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  position: relative;
+  counter-increment: step;
+}
+.docs-ol li::before {
+  content: counter(step);
+  position: absolute;
+  left: 12px; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 20px;
+  background: var(--blue);
+  color: var(--bg);
+  font-size: 11px; font-weight: 700;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.docs-codelist {
+  margin-top: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.docs-codelist .path { color: var(--green); }
+.docs-codelist .mode { color: var(--muted); }
+
+/* ── SUBNET STRIP ─────────────────────────────────────────── */
+.subnet-strip {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 0 0 10px; padding: 8px 10px;
+  background: rgba(63,75,191,.04);
+  border: 1px solid #3f4bbf;
+  border-radius: 5px;
+  justify-content: center;
+}
+.ss-chip {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  padding: 3px 9px; border-radius: 4px; white-space: nowrap;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  transition: all .15s;
+}
+.ss-chip:hover { transform: translateY(-1px); filter: brightness(1.15); }
+.ss-chip.ss-selected {
+  box-shadow: 0 0 0 2px currentColor;
+  filter: brightness(1.2);
+}
+.ss-v10 { color: var(--green);  border-color: var(--green); }
+.ss-v20 { color: var(--teal);   border-color: var(--teal); }
+.ss-v30 { color: var(--indigo); border-color: var(--indigo); }
+.ss-v40 { color: var(--orange); border-color: var(--orange); }
+.ss-v50 { color: var(--purple); border-color: var(--purple); }
+.ss-v60 { color: var(--red);    border-color: var(--red); }
+
+/* ── SVG CONNECTIONS ──────────────────────────────────────── */
+.cl {
+  fill: none; stroke-width: 1.5; opacity: .2;
+  transition: opacity .25s, stroke-width .15s;
+}
+.cl-phys { stroke: var(--purple); }
+.cl-net  { stroke: var(--blue); }
+.cl-dns  { stroke: var(--green); stroke-dasharray: 5 3; }
+.cl-data { stroke: var(--teal);  stroke-dasharray: 6 3; }
+.cl-mgmt { stroke: #c0c0c0; stroke-dasharray: 4 4; }
+.cl-dep  { stroke: var(--yellow); }
+
+/* Active / dimmed line states */
+.cl-dim    { opacity: .05 !important; }
+.cl-active { opacity: 1 !important; stroke-width: 2.5 !important; }
+.cl-active.cl-phys { filter: drop-shadow(0 0 4px rgba(188,140,255,.7)); }
+.cl-active.cl-net  { filter: drop-shadow(0 0 4px rgba(88,166,255,.7)); }
+.cl-active.cl-dns  { filter: drop-shadow(0 0 4px rgba(63,185,80,.7)); }
+.cl-active.cl-data { filter: drop-shadow(0 0 4px rgba(57,208,216,.7)); }
+.cl-active.cl-mgmt { filter: drop-shadow(0 0 4px rgba(192,192,192,.7)); }
+.cl-active.cl-dep  { filter: drop-shadow(0 0 4px rgba(210,153,34,.7)); }
+
+/* Node + boundary dimming when something is selected */
+#topo-wrap.has-selection .node {
+  opacity: 0.12;
+  transition: opacity .25s;
+}
+#topo-wrap.has-selection .node.selected,
+#topo-wrap.has-selection .node.conn-lit {
+  opacity: 1;
+  transition: opacity .25s;
+  z-index: 20;
+}
+#topo-wrap.has-selection .bx-label {
+  opacity: 0.25;
+  transition: opacity .25s;
+}
+#topo-wrap.has-selection .bx {
+  border-color: rgba(48,54,61,.35);
+  transition: border-color .25s;
+}
+#topo-wrap.has-selection .ss-chip {
+  opacity: 0.15;
+  transition: opacity .25s;
+}
+#topo-wrap.has-selection .ss-chip.ss-lit {
+  opacity: 1;
+  transition: opacity .25s;
+}
+#topo-wrap.has-selection .subnet-strip {
+  border-color: transparent;
+  background: transparent;
+  transition: border-color .25s, background .25s;
+}
+
+/* ── MOBILE / RESPONSIVE ──────────────────────────────────── */
+@media (max-width: 980px) {
+  main { padding: 16px; }
+  .topo-wrapper {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    padding-bottom: 10px;
+  }
+  .topo-layout { min-width: 980px; }
+  #conn-svg { min-width: 980px; }
+}
+@media (max-width: 768px) {
+  header { padding: 12px 14px; gap: 10px; }
+  .header-logo { width: 30px; height: 30px; font-size: 15px; }
+  header h1 { font-size: 15px; }
+  header p { font-size: 11px; }
+  .header-status { display: none; }
+  nav { padding: 0 12px; }
+  .tab-btn { font-size: 12px; padding: 10px 12px; gap: 5px; min-height: 44px; }
+  #detail-panel { width: 100%; right: -100%; }
+  #detail-panel.open { right: 0; }
+  .vlan-grid { grid-template-columns: 1fr; gap: 12px; }
+  .report-cards { grid-template-columns: 1fr; }
+  .pipeline { flex-direction: column; align-items: center; }
+  .p-arrow { transform: rotate(90deg); padding: 4px 0; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-logo">🖥️</div>
+  <div>
+    <h1>homelab</h1>
+    <p>2× Lenovo M720q Tiny · Proxmox VE 9.x · 48GB RAM · 6 VLANs</p>
+  </div>
+  <div class="header-status">
+    <span class="rb-pill rb-live" style="text-transform:none; font-size:11px; padding:3px 10px; gap:6px;">
+      <span class="status-dot"></span> Online
+    </span>
+  </div>
+</header>
+
+<nav>
+  <button class="tab-btn active" data-tab="topology">🗺️ Topologie</button>
+  <button class="tab-btn" data-tab="vlans">🔀 VLANs</button>
+  <button class="tab-btn" data-tab="agent40">📅 agent40</button>
+  <button class="tab-btn" data-tab="troubleshooting">🔧 Troubleshooting</button>
+  <button class="tab-btn" data-tab="docs">📖 Doku</button>
+</nav>
+
+<main>
+
+<!-- ════════════════ TOPOLOGY ════════════════ -->
+<section id="tab-topology" class="tab-content active">
+
+  <div class="topo-legend">
+    <div class="legend-item"><div class="legend-line" style="background:var(--purple)"></div>Physisch</div>
+    <div class="legend-item"><div class="legend-line" style="background:var(--blue)"></div>Netzwerk-Routing</div>
+    <div class="legend-item"><div class="legend-line" style="background-image:repeating-linear-gradient(to right, var(--green) 0 5px, transparent 5px 8px)"></div>DNS</div>
+    <div class="legend-item"><div class="legend-line" style="background-image:repeating-linear-gradient(to right, var(--teal) 0 6px, transparent 6px 9px)"></div>Daten / API</div>
+    <div class="legend-item"><div class="legend-line" style="background:var(--yellow)"></div>Auto-Deploy</div>
+    <div class="legend-item"><div class="legend-line" style="background-image:repeating-linear-gradient(to right, #c0c0c0 0 4px, transparent 4px 8px)"></div>Mgmt / Remote</div>
+    <div class="legend-item"><span style="font-size:11px">▸</span><span style="color:var(--muted)">Pfeil = Einweg-Datenfluss</span></div>
+    <button type="button" id="show-all-conns" class="legend-toggle" aria-pressed="false" title="Alle Knoten und Verbindungen gleichzeitig hervorheben">Alle Verbindungen anzeigen</button>
+  </div>
+
+  <div class="topo-wrapper" id="topo-wrap">
+    <svg id="conn-svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr-blue"   markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill="rgba(88,166,255,.6)"/></marker>
+        <marker id="arr-teal"   markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill="rgba(57,208,216,.7)"/></marker>
+        <marker id="arr-yellow" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill="rgba(210,153,34,.7)"/></marker>
+      </defs>
+    </svg>
+
+    <div class="topo-layout">
+
+      <!-- Row 1: External -->
+      <div class="topo-row">
+        <div class="node ext" id="n-tailscale" data-node="tailscale">
+          <span class="n-icon">🔒</span>
+          <span class="n-label">Tailscale</span>
+          <span class="n-sub">Mesh VPN</span>
+          <span class="n-badge b-ext">EXT</span>
+        </div>
+        <div class="node ext" id="n-github" data-node="github">
+          <span class="n-icon">⑂</span>
+          <span class="n-label">GitHub</span>
+          <span class="n-sub">SSH :443 &amp; Hooks</span>
+          <span class="n-badge b-ext">EXT</span>
+        </div>
+        <div class="node ext" id="n-gemini" data-node="gemini">
+          <span class="n-icon">🤖</span>
+          <span class="n-label">Google Gemini</span>
+          <span class="n-sub">API + OneDrive rclone</span>
+          <span class="n-badge b-ext">EXT</span>
+        </div>
+        <div class="node ext" id="n-openmeteo" data-node="openmeteo">
+          <span class="n-icon">🌤</span>
+          <span class="n-label">Open-Meteo</span>
+          <span class="n-sub">Wetter-API :443</span>
+          <span class="n-badge b-ext">EXT</span>
+        </div>
+        <div class="node ext" id="n-smtp" data-node="smtp">
+          <span class="n-icon">📧</span>
+          <span class="n-label">SMTP-Provider</span>
+          <span class="n-sub">smtps :465</span>
+          <span class="n-badge b-ext">EXT</span>
+        </div>
+      </div>
+
+      <!-- Row 2: ISP Router (Fritz!Box) -->
+      <div class="topo-row">
+        <div class="node rtr" id="n-router" data-node="router">
+          <span class="n-icon">📡</span>
+          <span class="n-label">Fritz!Box 7530 AX</span>
+          <span class="n-sub">192.168.178.X</span>
+        </div>
+      </div>
+
+      <!-- Row 3: Switch (links freistehend) + Dual-Node Proxmox Gesamtrahmen -->
+      <div class="topo-row" style="align-items:flex-start; gap:18px;">
+
+        <!-- TP-Link TL-SG608E — standalone managed switch -->
+        <div class="node sw" id="n-switch" data-node="switch">
+          <span class="n-icon">🔀</span>
+          <span class="n-label">TP-Link TL-SG608E</span>
+          <span class="n-sub">10.10.10.XX</span>
+          <span class="n-sub">8-Port GbE Switch</span>
+        </div>
+
+        <!-- Hardware boundary -->
+        <div class="bx bx-hardware">
+          <span class="bx-label" style="color:var(--purple);">🖥️ 2× Lenovo M720q Tiny — 16GB + 32GB RAM · NVMe + JMB58x SATA</span>
+
+          <!-- Proxmox boundary -->
+          <div class="bx bx-proxmox" style="margin-top:8px;">
+            <span class="bx-label" style="color:#818cf8;">Proxmox VE 9.x — pve-edge-01 &amp; pve-data-01 (10.10.10.XX)</span>
+
+            <!-- OPNsense VM -->
+            <div class="topo-row" style="margin-top:6px; margin-bottom:8px;">
+              <div class="node fw" id="n-opnsense" data-node="opnsense">
+                <span class="n-icon">🛡️</span>
+                <span class="n-label">OPNsense VM</span>
+                <span class="n-sub">WAN 192.168.178.XX</span>
+                <span class="n-sub">LAN 10.10.X.1 + Zenarmor</span>
+                <span class="n-badge b-fw">VM</span>
+              </div>
+            </div>
+
+            <!-- Subnet strip (6 VLANs) -->
+            <div class="subnet-strip">
+              <span class="ss-chip ss-v10" data-vlan="v10">VLAN 10 · 10.10.10.0/24</span>
+              <span class="ss-chip ss-v20" data-vlan="v20">VLAN 20 · 10.10.20.0/24</span>
+              <span class="ss-chip ss-v30" data-vlan="v30">VLAN 30 · 10.10.30.0/24</span>
+              <span class="ss-chip ss-v40" data-vlan="v40">VLAN 40 · 10.10.40.0/24</span>
+              <span class="ss-chip ss-v50" data-vlan="v50">VLAN 50 · 10.10.50.0/24</span>
+              <span class="ss-chip ss-v60" data-vlan="v60">VLAN 60 · 10.10.60.0/24</span>
+            </div>
+
+            <!-- 4 VLAN Columns row -->
+            <div class="hflex" style="align-items:flex-start; gap:14px; justify-content:center; padding-top: 14px;">
+
+              <!-- Spalte 1: VLAN 10 mgmt -->
+              <div class="bx bx-vlan10">
+                <span class="bx-label" style="color:var(--green);">VLAN 10 — mgmt · 10.10.10.0/24</span>
+                <div class="vflex" style="margin-top:8px;">
+                  <div class="node lxc" id="n-technitium" data-node="technitium">
+                    <span class="n-icon">🚫</span>
+                    <span class="n-label">Technitium DNS</span>
+                    <span class="n-sub">10.10.10.XX</span>
+                    <span class="n-badge b-lxc">LXC</span>
+                  </div>
+                  <div class="node lxc" id="n-tailscale-lxc" data-node="tailscale-lxc">
+                    <span class="n-icon">🔒</span>
+                    <span class="n-label">Tailscale Router</span>
+                    <span class="n-sub">10.10.10.XX · SNAT</span>
+                    <span class="n-badge b-lxc">LXC</span>
+                  </div>
+                  <div class="node host" id="n-pve-hosts" data-node="pve-hosts">
+                    <span class="n-icon">🖥️</span>
+                    <span class="n-label">pve-edge &amp; data</span>
+                    <span class="n-sub">10.10.10.XX :8006</span>
+                    <span class="n-badge b-host">HOST</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Spalte 2: VLAN 20 services -->
+              <div class="bx bx-vlan20">
+                <span class="bx-label" style="color:var(--teal);">VLAN 20 — services · 10.10.20.0/24</span>
+                <div class="vflex" style="margin-top:8px;">
+                  <div class="node lxc" id="n-homelab-site" data-node="homelab-site">
+                    <span class="n-icon">📖</span>
+                    <span class="n-label">homelab-site</span>
+                    <span class="n-sub">10.10.20.XX</span>
+                    <span class="n-sub">nginx · diese Seite</span>
+                    <span class="n-badge b-lxc">LXC</span>
+                  </div>
+                  <div class="node lxc" id="n-pbs" data-node="pbs">
+                    <span class="n-icon">💾</span>
+                    <span class="n-label">PBS Backup</span>
+                    <span class="n-sub">10.10.20.XX :8007</span>
+                    <span class="n-badge b-lxc">LXC</span>
+                  </div>
+                  <div class="node lxc" id="n-docker" data-node="docker">
+                    <span class="n-icon">🐳</span>
+                    <span class="n-label">Docker</span>
+                    <span class="n-sub">10.10.20.XX</span>
+                    <span class="n-badge b-lxc">LXC</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Spalte 3: VLAN 40 automation (agent40 VM) -->
+              <div class="bx bx-vlan40">
+                <span class="bx-label" style="color:var(--orange);">VLAN 40 — automation · 10.10.40.0/24 · internet-only</span>
+
+                <div class="bx bx-agent40-vm" style="margin-top:8px;">
+                  <span class="bx-label" style="color:#f78166;">agent40 VM — Ubuntu 24.04 · 10.10.40.XX · 2 Kerne · 2GB</span>
+                  <div class="hflex" style="margin-top:8px; align-items:stretch;">
+
+                    <!-- agent40 Berichte -->
+                    <div class="bx bx-agent40-scripts">
+                      <span class="bx-label" style="color:var(--yellow);">agent40</span>
+                      <div class="vflex" style="margin-top:8px;">
+                        <div class="node svc" id="n-reports" data-node="reports">
+                          <span class="n-icon">📅</span>
+                          <span class="n-label">Cron-Berichte</span>
+                          <span class="n-sub">Mo · Tägl. · Fr</span>
+                          <span class="n-badge b-svc">SVC</span>
+                        </div>
+                        <div class="node svc" id="n-gemini-cli" data-node="gemini-cli">
+                          <span class="n-icon">💬</span>
+                          <span class="n-label">Gemini CLI</span>
+                          <span class="n-sub">+ rclone Mirror</span>
+                          <span class="n-badge b-svc">SVC</span>
+                        </div>
+                        <div class="node svc" id="n-msmtp" data-node="msmtp">
+                          <span class="n-icon">📤</span>
+                          <span class="n-label">msmtp</span>
+                          <span class="n-sub">SMTP-Client :465</span>
+                          <span class="n-badge b-svc">SVC</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- auto-deploy -->
+                    <div class="bx bx-deploy">
+                      <span class="bx-label" style="color:var(--teal);">auto-deploy</span>
+                      <div class="vflex" style="margin-top:8px;">
+                        <div class="node svc" id="n-ngrok" data-node="ngrok">
+                          <span class="n-icon">🌐</span>
+                          <span class="n-label">ngrok</span>
+                          <span class="n-sub">:443 Tunnel · geplant</span>
+                          <span class="n-badge b-svc">PLAN</span>
+                        </div>
+                        <div class="node svc" id="n-webhook" data-node="webhook">
+                          <span class="n-icon">🪝</span>
+                          <span class="n-label">webhook</span>
+                          <span class="n-sub">Node.js :3000</span>
+                          <span class="n-badge b-svc">SVC</span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div><!-- end VLAN 40 -->
+
+              <!-- Spalte 4: Kompaktspalte für VLAN 30 (Clients), VLAN 50 (NAS), VLAN 60 (IoT) -->
+              <div class="vflex" style="gap:12px; align-self:flex-start;">
+                <div class="bx bx-vlan30">
+                  <span class="bx-label" style="color:var(--indigo);">VLAN 30 — clients · 10.10.30.0/24</span>
+                  <div class="vflex" style="margin-top:6px;">
+                    <div class="node cli" id="n-clients" data-node="clients">
+                      <span class="n-icon">💻</span>
+                      <span class="n-label">Admin-PC &amp; Laptop</span>
+                      <span class="n-sub">10.10.30.XX</span>
+                      <span class="n-badge b-cli">CLI</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bx bx-vlan50">
+                  <span class="bx-label" style="color:var(--purple);">VLAN 50 — nas · 10.10.50.0/24</span>
+                  <div class="vflex" style="margin-top:6px;">
+                    <div class="node host" id="n-nas" data-node="nas">
+                      <span class="n-icon">🗄️</span>
+                      <span class="n-label">NAS / Storage</span>
+                      <span class="n-sub">reserviert · JMB58x</span>
+                      <span class="n-badge b-host">NAS</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bx bx-vlan60">
+                  <span class="bx-label" style="color:var(--red);">VLAN 60 — iot · 10.10.60.0/24</span>
+                  <div class="vflex" style="margin-top:6px;">
+                    <div class="node fw" id="n-iot" data-node="iot">
+                      <span class="n-icon">💡</span>
+                      <span class="n-label">Hue &amp; IP-Kamera</span>
+                      <span class="n-sub">10.10.60.XX · isoliert</span>
+                      <span class="n-badge b-fw">IOT</span>
+                    </div>
+                  </div>
+                </div>
+              </div><!-- end Spalte 4 -->
+
+            </div><!-- end VLANs hflex -->
+          </div><!-- end Proxmox -->
+        </div><!-- end Hardware boundary -->
+      </div><!-- end Switch+Proxmox row -->
+
+    </div><!-- end topo-layout -->
+  </div><!-- end topo-wrapper -->
+</section>
+
+<!-- ════════════════ VLANS ════════════════ -->
+<section id="tab-vlans" class="tab-content">
+  <div class="vlan-grid">
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(93,214,116,.15);color:var(--green)">10</span>
+        <h3>mgmt</h3>
+        <span class="rb-pill rb-live">🟢 LIVE (Basis)</span>
+        <span class="vlan-subnet">10.10.10.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row">
+          <span class="chip">pve-edge-01 10.10.10.XX</span>
+          <span class="chip">pve-data-01 10.10.10.XX</span>
+          <span class="chip">TL-SG608E 10.10.10.XX</span>
+          <span class="chip">Technitium DNS 10.10.10.XX</span>
+          <span class="chip">Tailscale LXC 10.10.10.XX</span>
+        </div>
+        <table class="fw-table">
+          <tr><th>Aktion</th><th>Port</th><th>Ziel</th><th>Hinweis</th></tr>
+          <tr><td class="a-pass">Pass</td><td>53</td><td>*</td><td>Technitium DoH-Bootstrap (löst dns10.quad9.net vor RFC1918-Block auf)</td></tr>
+          <tr><td class="a-pass">Pass</td><td>53</td><td>Technitium</td><td>Interne DNS-Auflösung (mgmt → Technitium DNS)</td></tr>
+          <tr><td class="a-pass">Pass</td><td>8007</td><td>PBS (VLAN 20)</td><td>TLS Cross-Node Snapshot-Backup-Stream (:8007)</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>RFC1918</td><td>Kein unautorisierter Lateral-Traffic</td></tr>
+          <tr><td class="a-pass">Pass</td><td>443 / 80</td><td>*</td><td>HTTPS/HTTP — PVE Updates, Quad9 DoH, Tailscale Control</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>*</td><td>Default Deny</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(77,214,194,.15);color:var(--teal)">20</span>
+        <h3>services</h3>
+        <span class="rb-pill rb-live">🟢 LIVE</span>
+        <span class="vlan-subnet">10.10.20.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row">
+          <span class="chip">homelab-site 10.10.20.XX</span>
+          <span class="chip">PBS Backup 10.10.20.XX</span>
+          <span class="chip">Docker LXC 10.10.20.XX</span>
+        </div>
+        <table class="fw-table">
+          <tr><th>Aktion</th><th>Port</th><th>Ziel</th><th>Hinweis</th></tr>
+          <tr><td class="a-pass">Pass</td><td>53</td><td>Technitium</td><td>Zentrale DNS-Auflösung (Zone tre.internal)</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>RFC1918</td><td>Kein Verbindungsaufbau in Mgmt-, Client- oder NAS-Netze</td></tr>
+          <tr><td class="a-pass">Pass</td><td>443</td><td>*</td><td>HTTPS — Updates &amp; GitHub Read-Only Deploy Key (SSH :443)</td></tr>
+          <tr><td class="a-pass">Pass</td><td>80</td><td>*</td><td>HTTP — Debian/Ubuntu APT-Paketquellen</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>*</td><td>Default Deny</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(129,140,248,.15);color:var(--indigo)">30</span>
+        <h3>clients</h3>
+        <span class="rb-pill rb-live">🟢 LIVE</span>
+        <span class="vlan-subnet">10.10.30.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row">
+          <span class="chip">Admin-Workstation 10.10.30.XX</span>
+          <span class="chip">Arbeits-Laptop 10.10.30.XX</span>
+          <span class="chip" style="color:var(--indigo)">Hybrides Zero-Trust</span>
+        </div>
+        <table class="fw-table">
+          <tr><th>Aktion</th><th>Port</th><th>Ziel</th><th>Hinweis</th></tr>
+          <tr><td class="a-pass">Pass</td><td>53</td><td>Technitium</td><td>DNS-Auflösung (tre.internal) + Adblocking</td></tr>
+          <tr><td class="a-pass">Pass</td><td>22/443/8006</td><td>VLAN 10 (mgmt)</td><td>Gezielter Admin-Zugriff (Proxmox GUI, OPNsense, Switch)</td></tr>
+          <tr><td class="a-pass">Pass</td><td>80/443/8007</td><td>VLAN 20 &amp; 50</td><td>Zugriff auf map.tre.internal, PBS GUI &amp; NAS-Shares</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>VLAN 40 &amp; 60</td><td>Trennung zu KI-Automation &amp; IoT</td></tr>
+          <tr><td class="a-pass">Pass</td><td>*</td><td>WAN</td><td>Regulärer Internet-Traffic (geprüft durch Zenarmor L7 DPI)</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(255,138,92,.15);color:var(--orange)">40</span>
+        <h3>automation</h3>
+        <span class="rb-pill rb-live">🟢 LIVE</span>
+        <span class="vlan-subnet">10.10.40.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row">
+          <span class="chip">agent40 VM 10.10.40.XX</span>
+          <span class="chip">Ubuntu 24.04 KVM</span>
+          <span class="chip" style="color:var(--orange)">internet-only</span>
+        </div>
+        <table class="fw-table">
+          <tr><th>Aktion</th><th>Port</th><th>Ziel</th><th>Hinweis</th></tr>
+          <tr><td class="a-pass">Pass</td><td>53</td><td>Technitium</td><td>Nur DNS-Auflösung zu 10.10.10.XX erlaubt</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>RFC1918</td><td>Kein Zugriff auf interne Netze</td></tr>
+          <tr><td class="a-pass">Pass</td><td>443</td><td>*</td><td>HTTPS (Google Gemini API, OneDrive rclone, Open-Meteo, GitHub :443, ngrok)</td></tr>
+          <tr><td class="a-pass">Pass</td><td>80</td><td>*</td><td>HTTP (Ubuntu APT-Paketquellen)</td></tr>
+          <tr><td class="a-pass">Pass</td><td>465</td><td>*</td><td>Implicit TLS SMTPS (msmtp E-Mail-Versand)</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>*</td><td>Alles andere wird verworfen und geloggt</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(181,138,255,.15);color:var(--purple)">50</span>
+        <h3>nas / storage</h3>
+        <span class="rb-pill rb-reserved">⚪ RESERVIERT</span>
+        <span class="vlan-subnet">10.10.50.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row">
+          <span class="chip">JMB58x 5-Port SATA</span>
+          <span class="chip">geplant: SMB / NFS / Backup-Ziel</span>
+          <span class="chip">10.10.50.XX</span>
+        </div>
+        <table class="fw-table">
+          <tr><th>Aktion</th><th>Port</th><th>Ziel</th><th>Hinweis</th></tr>
+          <tr><td class="a-pass">Pass</td><td>53 / 123</td><td>Gateway</td><td>DNS &amp; NTP-Zeitsynchronisation</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>RFC1918</td><td>Storage initiiert keine Verbindungen in andere VLANs</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>*</td><td>Kein offener WAN-Egress für Storage-Systeme</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="vlan-card">
+      <div class="vlan-card-head">
+        <span class="vlan-tag" style="background:rgba(255,90,108,.15);color:var(--red)">60</span>
+        <h3>iot / smarthome</h3>
+        <span class="rb-pill rb-live">🟢 LIVE</span>
+        <span class="vlan-subnet">10.10.60.0/24</span>
+      </div>
+      <div class="vlan-body">
+        <div class="chip-row">
+          <span class="chip">Philips Hue Bridge 10.10.60.XX</span>
+          <span class="chip">IP-Kamera 10.10.60.XX</span>
+          <span class="chip">Smart-TV</span>
+          <span class="chip" style="color:var(--red)">Block RFC1918</span>
+        </div>
+        <table class="fw-table">
+          <tr><th>Aktion</th><th>Port</th><th>Ziel</th><th>Hinweis</th></tr>
+          <tr><td class="a-pass">Pass</td><td>53 / 123</td><td>10.10.60.1</td><td>Lokales DNS &amp; NTP am Gateway</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>RFC1918</td><td>Komplette Abschottung von allen internen Heimnetz-VLANs</td></tr>
+          <tr><td class="a-pass">Pass</td><td>80 / 443</td><td>!RFC1918</td><td>Nur ausgehende Cloud-/Firmware-Kommunikation</td></tr>
+          <tr><td class="a-block">Block</td><td>*</td><td>*</td><td>Default Deny</td></tr>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════ AGENT40 ════════════════ -->
+<section id="tab-agent40" class="tab-content">
+
+  <p class="section-heading">Automatisierte Berichte (agent40 VM · VLAN 40)</p>
+  <div class="report-cards">
+    <div class="report-card" style="border-top:3px solid var(--blue)">
+      <div class="rc-head">
+        <span style="font-size:18px">🌅</span>
+        <h3>Morning &amp; Weekly Briefing</h3>
+        <span class="rc-cron">0 6 * * 1-7</span>
+      </div>
+      <p class="rc-desc">Strukturierter Tages- und Wochenfokus: anstehende Kalendertermine, lokale Wettervorhersage (Open-Meteo API) sowie Prioritäten-Empfehlung.</p>
+      <div class="chip-row"><span class="chip">Google Gemini CLI</span><span class="chip">Open-Meteo API</span><span class="chip">06:00 Uhr lokal</span></div>
+    </div>
+    <div class="report-card" style="border-top:3px solid var(--yellow)">
+      <div class="rc-head">
+        <span style="font-size:18px">🛡️</span>
+        <h3>Homelab SecOps &amp; Health Report</h3>
+        <span class="rc-cron">0 7 * * 1</span>
+      </div>
+      <p class="rc-desc">Automatisierte Auswertung des Infrastruktur-Zustands: PBS Cross-Node Backup-Verifikation, Node-Auslastung sowie OPNsense/Zenarmor Security-Highlights.</p>
+      <div class="chip-row"><span class="chip">SecOps Summary</span><span class="chip">PBS &amp; Zenarmor</span><span class="chip">Mo 07:00 Uhr</span></div>
+    </div>
+    <div class="report-card" style="border-top:3px solid var(--green)">
+      <div class="rc-head">
+        <span style="font-size:18px">🎓</span>
+        <h3>IHK / FISI Lern- &amp; Vault-Impulse</h3>
+        <span class="rc-cron">0 18 * * 5</span>
+      </div>
+      <p class="rc-desc">Wöchentliche Zusammenfassung neuer Lernnotizen aus dem lokalen OneDrive-Spiegelverzeichnis (<code>/opt/vault-mirror/</code>) inkl. gezielter AP1/AP2-Prüfungsfragen (IHK FISI).</p>
+      <div class="chip-row"><span class="chip">rclone OneDrive Mirror</span><span class="chip">30_Workspace</span><span class="chip">Fr 18:00 Uhr</span></div>
+    </div>
+  </div>
+
+  <p class="section-heading">Berichts-Pipeline (Headless &amp; Read-Only Vault-Sync)</p>
+  <div class="pipeline">
+    <div class="p-step"><span class="p-icon">⏰</span><span class="p-name">Cron</span><span class="p-detail">crontab (expliziter PATH)</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">☁️</span><span class="p-name">rclone sync</span><span class="p-detail">OneDrive → /opt/vault-mirror</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">📜</span><span class="p-name">Bash-Skript</span><span class="p-detail">daily / secops / ihk</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">💬</span><span class="p-name">Gemini CLI</span><span class="p-detail">headless (:443)</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">🌤</span><span class="p-name">APIs</span><span class="p-detail">Open-Meteo · Vault .md</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">🎨</span><span class="p-name">HTML-Template</span><span class="p-detail">gerendertes Briefing</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">📤</span><span class="p-name">msmtp</span><span class="p-detail">Implicit TLS :465</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">📧</span><span class="p-name">Postfach</span><span class="p-detail">HTML-E-Mail</span></div>
+  </div>
+
+  <p class="section-heading">Zero-Inbound Auto-Deploy Pipeline</p>
+  <div class="pipeline">
+    <div class="p-step"><span class="p-icon">⑂</span><span class="p-name">git push</span><span class="p-detail">auf main</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">🐙</span><span class="p-name">GitHub Webhook</span><span class="p-detail">application/json</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">🌐</span><span class="p-name">ngrok Tunnel</span><span class="p-detail">ausgehend :443 (noch offen)</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">🪝</span><span class="p-name">webhook.service</span><span class="p-detail">HMAC-SHA256 + 5s Rate-Limit</span></div>
+    <span class="p-arrow">→</span>
+    <div class="p-step"><span class="p-icon">📥</span><span class="p-name">git pull</span><span class="p-detail">/opt/agent40 (SSH :443)</span></div>
+  </div>
+
+</section>
+
+<!-- ════════════════ TROUBLESHOOTING ════════════════ -->
+<section id="tab-troubleshooting" class="tab-content">
+
+  <div class="trouble-block">
+    <div class="trouble-heading">📅 agent40 &amp; Automatisierung (VLAN 40)</div>
+    <div class="accordion">
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          VLAN 40 Parent-Interface-Falle (vtnet0 WAN statt vtnet1 LAN) &amp; TCP-only DNS-Pinhole
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="acc-grid">
+            <div class="acc-col">
+              <h4>Symptom und Ursache</h4>
+              <p>Nach dem Cloud-Init-Rollout von <code>agent40</code> (<code>VM 104</code>) schickte die VM zwar <code>802.1Q vlan 40</code> ARP-Requests bis vor <code>tap101i1</code>, erhielt aber keine Antwort. Ein paralleler <code>tcpdump -ni tap101i0</code> zeigte, dass <code>vlan0.40</code> in OPNsense noch auf <code>vtnet0 (WAN)</code> hing. Zudem stand die DNS-Pinhole-Regel nur auf <code>TCP</code> statt <code>TCP/UDP</code>.</p>
+            </div>
+            <div class="acc-col">
+              <h4>Lösung</h4>
+              <p>Umstellung des Parent-Interfaces von <code>vlan0.40</code> auf <code>vtnet1 (LAN)</code> inkl. OPNsense-Reboot (für Zenarmor <code>netmap</code>) sowie Aktivierung von <code>TCP/UDP</code> auf Port 53 zu Technitium DNS.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-m"></div>
+          Headless OneDrive Read-Only Mirror via SSH-Tunnel (-L 53682) &amp; Remotely-Save App-Folder
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="acc-grid">
+            <div class="acc-col">
+              <h4>Symptom und Ursache</h4>
+              <p>Auf der Headless-VM steht kein lokaler Browser für den Microsoft-OAuth2-Login (<code>127.0.0.1:53682</code>) bereit. Zudem legt das Obsidian-Plugin <em>Remotely Save</em> den Vault nicht im OneDrive-Root, sondern im App-Container <code>onedrive:Apps/remotely-save/&lt;vault&gt;</code> ab.</p>
+            </div>
+            <div class="acc-col">
+              <h4>Lösung</h4>
+              <p>OAuth-Authentifizierung über SSH Local Port Forwarding (<code>ssh -L 53682:127.0.0.1:53682</code>) und strikter Einweg-Mirror ausschließlich für <code>30_Workspace/</code> nach <code>/opt/vault-mirror/30_Workspace</code>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- end agent40 block -->
+
+  <div class="trouble-block">
+    <div class="trouble-heading">🔀 Netzwerk, Firewall &amp; SSH</div>
+    <div class="accordion">
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          Zenarmor L7 DPI verursacht Paketverluste &amp; Freezes mit dem OPNsense Tailscale-Plugin
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p>Wiederholte Paketverluste, hohe Latenzen und Interface-Deadlocks, sobald <span class="ic">os-tailscale</span> direkt auf der OPNsense-Firewall parallel zu Zenarmor lief.</p>
+            <h4 style="margin-top:10px">Ursache</h4>
+            <p>Zenarmor greift Netzwerkpakete über den FreeBSD <span class="ic">netmap</span>-Treiber direkt im Kernel-Space ab und kollidiert mit virtuellen Go-Tunnel-Interfaces (<span class="ic">tailscale0</span>) auf derselben FreeBSD-Instanz.</p>
+            <h4 style="margin-top:10px">Lösung</h4>
+            <p>Tailscale wurde komplett von der OPNsense entfernt und läuft als dedizierter, unprivilegierter <strong>Debian 13 LXC</strong> (<span class="ic">10.10.10.XX</span>) auf <span class="ic">pve-edge-01</span> mit Kernel IP-Forwarding und SNAT:</p>
+            <code class="code-block">echo 'net.ipv4.ip_forward = 1' | tee -a /etc/sysctl.d/99-tailscale.conf
+sysctl -p /etc/sysctl.d/99-tailscale.conf
+tailscale up --advertise-routes=10.10.10.0/24,10.10.20.0/24,10.10.30.0/24,10.10.40.0/24,10.10.50.0/24,10.10.60.0/24</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          Kompletter DNS-Ausfall nach Aktivierung der <span class="ic">mgmt</span>-Firewallregeln — <span class="ic">Could not resolve host</span>
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p>Nach einigen Stunden Laufzeit fällt die Namensauflösung über alle VLANs hinweg aus (<span class="ic">Could not resolve host</span>), obwohl HTTPS (<span class="ic">:443</span>) für DoH freigegeben ist.</p>
+            <h4 style="margin-top:10px">Ursache</h4>
+            <p>Technitium DNS nutzt Quad9 DoH (<span class="ic">https://dns10.quad9.net/dns-query</span>), benötigt aber nach Ablauf des TTL-Caches eine <strong>Bootstrap-DNS-Abfrage auf Port 53</strong>, um den Hostnamen <span class="ic">dns10.quad9.net</span> selbst aufzulösen. Die <span class="ic">Default Deny</span>-Regel auf VLAN 10 blockierte diesen ausgehenden Port-53-Request.</p>
+            <h4 style="margin-top:10px">Lösung</h4>
+            <p>Explizite Bootstrap-Pass-Regel für die IP von Technitium DNS <strong>ganz oben vor dem RFC1918-Block</strong> in <span class="ic">VLAN 10</span> platzieren:</p>
+            <code class="code-block">Pass  TCP/UDP  10.10.10.XX → *:53  — Technitium DoH-Bootstrap DNS</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-m"></div>
+          SSH / <span class="ic">git pull</span> hängt bis zum Timeout (Port 22 auf VLAN 20 gesperrt — <span class="ic">homelab-site</span>)
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Ursache</h4>
+            <p><span class="ic">VLAN 20 (services)</span> erlaubt ausgehend nur Port <span class="ic">443</span> und <span class="ic">80</span>. Standard-SSH auf Port 22 wird von der OPNsense-Firewall blockiert.</p>
+            <h4 style="margin-top:10px">Lösung</h4>
+            <p>SSH-Verbindungen zu GitHub über <span class="ic">ssh.github.com:443</span> in <span class="ic">~/.ssh/config</span> tunneln:</p>
+            <code class="code-block">Host github.com
+  HostName ssh.github.com
+  Port 443
+  User git
+  IdentityFile ~/.ssh/id_ed25519</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          802.1Q VLAN-Drops auf OPNsense durch <span class="ic">tap101i1</span> Hot-Enable &amp; Zenarmor <span class="ic">emulated netmap</span> (<span class="ic">VLAN_HWTAGGING</span>-Falle)
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p>Nach der Aktivierung von <span class="ic">VLAN aware</span> auf <span class="ic">vmbr2</span> (<span class="ic">pve-edge-01</span>) und dem 802.1Q-Tagging am Switch (<span class="ic">Port 2 &lt;-&gt; Port 8</span>) antwortete der PBS-Container (<span class="ic">10.10.20.XX</span> in <span class="ic">VLAN 20</span>) zwar in <span class="ic">0,7 ms</span> auf ARP-Anfragen der OPNsense (<span class="ic">tcpdump -ni tap101i1 -e</span>), jedoch verwarf die OPNsense alle eingehenden 802.1Q-Pakete beim Empfang (<span class="ic">RX</span>).</p>
+            <h4 style="margin-top:10px">Ursache (zwei Probleme gleichzeitig)</h4>
+            <p>1. <strong>Proxmox <span class="ic">ifreload -a</span>:</strong> Wird <span class="ic">VLAN aware</span> auf einer Bridge aktiviert, während die Firewall-VM bereits läuft, öffnet <span class="ic">ifreload</span> zwar die physische Karte (<span class="ic">enp4s0</span>), belässt den laufenden QEMU-TAP-Port <span class="ic">tap101i1</span> aber auf <span class="ic">1 PVID Egress Untagged</span>.<br>
+            2. <strong>FreeBSD <span class="ic">VLAN_HWTAGGING</span> vs. Zenarmor <span class="ic">emulated netmap</span>:</strong> Standardmäßig schneidet der <span class="ic">vtnet1</span>-Treiber den 4-Byte <span class="ic">802.1Q</span>-Header aus dem Ethernet-Frame und speichert die VLAN-ID nur als <span class="ic">mbuf</span>-Flag (<span class="ic">M_VLANTAG</span>). Zenarmors emulierter <span class="ic">netmap</span>-Ring kopiert nur den rohen Ethernet-Payload und verliert bei der Re-Injektion das <span class="ic">M_VLANTAG</span>-Flag, sodass die Pakete ohne VLAN-Tag auf <span class="ic">vtnet1</span> statt auf <span class="ic">vlan0.20</span> landen.</p>
+            <h4 style="margin-top:10px">Lösung</h4>
+            <p>Freischaltung von <span class="ic">tap101i1</span> zur Laufzeit auf <span class="ic">pve-edge-01</span> sowie Deaktivierung von <strong><span class="ic">VLAN Hardware Filtering</span></strong> unter <em>OPNsense → Interfaces → Settings</em> gefolgt von einem einmaligen OPNsense-Reboot:</p>
+            <code class="code-block">bridge vlan add vid 2-4094 dev tap101i1
+# + OPNsense: Interfaces -> Settings -> Disable VLAN Hardware Filtering + Reboot</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-m"></div>
+          OPNsense Kea DHCPv4 verteilt Gateway-IP (<span class="ic">10.10.10.1</span>) statt Technitium DNS (<span class="ic">Auto collect option data</span>-Falle)
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p>Nach dem Umzug von Technitium DNS auf <span class="ic">10.10.10.XX</span> erhielten Clients per DHCP weiterhin die OPNsense-IP (<span class="ic">10.10.10.1</span>) als DNS-Server.</p>
+            <h4 style="margin-top:10px">Ursache</h4>
+            <p>In OPNsense Kea DHCPv4 ist pro Subnetz standardmäßig die Checkbox <strong><span class="ic">Auto collect option data</span></strong> aktiviert. Sie blendet die manuellen Felder <span class="ic">Routers (gateway)</span> und <span class="ic">DNS servers</span> (DHCP Option 6) aus und erzwingt die Verteilung der Firewall-eigenen IP. Das weiter unten sichtbare Feld <span class="ic">DNS server address</span> gehört dagegen zu <span class="ic">Dynamic DNS</span> (RFC 2136).</p>
+            <h4 style="margin-top:10px">Lösung</h4>
+            <p>Deaktivierung von <strong><span class="ic">Auto collect option data</span></strong> in allen Kea-Subnetzen, explizite Vergabe von <span class="ic">DNS servers: 10.10.10.XX</span> sowie <span class="ic">Domain name / search: tre.internal</span> und Aktivierung von RFC 2136 Dynamic Updates in Technitium DNS.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- end network block -->
+
+  <div class="trouble-block">
+    <div class="trouble-heading">🖥️ Proxmox VE &amp; Hardware</div>
+    <div class="accordion">
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          Backup-Job (<span class="ic">vzdump</span>) bricht bei 82 % mit <span class="ic">zstd: error 70 : No space left on device</span> ab (<span class="ic">Write-Before-Prune</span>-Falle)
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p>Während die LXC-Backups (<span class="ic">CT 100</span> &amp; <span class="ic">CT 102</span>, je ~350 MB) durchliefen, brach das Snapshot-Backup der OPNsense-VM (<span class="ic">VM 101</span>, 20 GB Disk) reproduzierbar bei 82 % mit <span class="ic">No space left on device</span> und <span class="ic">vma_queue_write: Broken pipe</span> ab.</p>
+            <h4 style="margin-top:10px">Ursache</h4>
+            <p>Der Backup-Job sicherte noch auf <span class="ic">local</span> (<span class="ic">/var/lib/vz/dump</span> auf der 68 GB Root-Partition <span class="ic">/dev/mapper/pve-root</span> von <span class="ic">pve-edge-01</span>), die durch 7 alte Vollbackups (38 GB) und ISOs (16 GB) zu <strong>100 % voll</strong> (534 MB frei) war. Da <span class="ic">vzdump</span> erst das neue Archiv komplett schreibt und <strong>danach</strong> erst <span class="ic">prune-backups</span> ausführt, reichten 534 MB zwar für die LXCs, liefen aber beim ~4,8 GB großen VM-Backup voll.</p>
+            <h4 style="margin-top:10px">Lösung</h4>
+            <p>Bereinigung der lokalen Alt-Archive auf <span class="ic">pve-edge-01</span> (Root-FS von 100 % auf 41 % entlastet) und Umstellung des Backup-Jobs in <span class="ic">/etc/pve/jobs.cfg</span> auf Cross-Node-Deduplizierung via <strong><span class="ic">pbs-internal</span></strong> (<span class="ic">pve-data-01</span>).</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-h"></div>
+          OPNsense VM erhält keine WAN-IP von der Fritz!Box 7530 AX
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Symptom</h4>
+            <p>Das WAN-Interface (<span class="ic">vtnet0</span> an <span class="ic">vmbr1</span>) der OPNsense-VM erhält per DHCP keine IP-Adresse aus dem Fritz!Box-Transitnetz (<span class="ic">192.168.178.0/24</span>).</p>
+            <h4 style="margin-top:10px">Ursache</h4>
+            <p>Ist in den Proxmox-Hardware-Optionen der OPNsense-VM bei den virtuellen Netzwerkkarten (<span class="ic">net0</span>/<span class="ic">net1</span>) die Checkbox <strong>„Firewall“</strong> aktiviert, verwirft der Linux ebtables/iptables-Filter von Proxmox Broadcast-/DHCP-Pakete vor der Firewall-VM.</p>
+            <h4 style="margin-top:10px">Lösung</h4>
+            <p>Unter <em>Proxmox → OPNsense VM → Hardware → Network Device (net0 &amp; net1)</em> den Haken bei <strong>Firewall</strong> entfernen (die Paketfilterung übernimmt OPNsense selbst).</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-m"></div>
+          Unprivilegierter Tailscale-LXC verweigert <span class="ic">net.ipv4.ip_forward = 1</span>
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Ursache und Lösung</h4>
+            <p>In unprivilegierten Proxmox-Containern muss unter <em>LXC → Options → Features</em> die Option <strong>Nesting</strong> (<span class="ic">nesting=1</span>) aktiviert und das TUN-Device (<span class="ic">/dev/net/tun</span>) durchgereicht werden, damit der Container Kernel-Parameter und den WireGuard-Userspace-/Kernel-Tunnel laden darf.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-item">
+        <button class="acc-trigger">
+          <div class="sev sev-l"></div>
+          Automatischer Wiederanlauf nach Stromausfall (Boot-Kette)
+          <span class="status-pill s-fixed">behoben</span>
+          <span class="acc-chevron">▼</span>
+        </button>
+        <div class="acc-body">
+          <div class="issue-box">
+            <h4>Drei Maßnahmen</h4>
+            <p>1. Im Lenovo M720q UEFI-BIOS unter <em>Power → After Power Loss</em> auf <strong>Power On</strong> stellen.<br>
+            2. Auf <span class="ic">pve-edge-01</span> für <span class="ic">OPNsense VM</span>, <span class="ic">Tailscale LXC</span> und <span class="ic">Technitium DNS LXC</span> <em>Start at boot = Yes</em> setzen.<br>
+            3. Da alle 3 kritischen Netzwerk-Dienste (OPNsense, Technitium DNS, Tailscale) autark auf dem Perimeter-Node <span class="ic">pve-edge-01</span> laufen, funktionieren Internet, DNS (<span class="ic">tre.internal</span>) und VPN selbst bei Wartung von <span class="ic">pve-data-01</span> unterbrechungsfrei.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- end proxmox block -->
+
+</section>
+
+<!-- ════════════════ DOCUMENTATION ════════════════ -->
+<section id="tab-docs" class="tab-content">
+
+  <div class="docs-hero">
+    <span class="docs-hero-ico">📖</span>
+    <div>
+      <h2>Homelab-Systemdokumentation</h2>
+      <p class="docs-lead">Zwei Lenovo ThinkCentre M720q Tiny mit Proxmox VE 9.x (<span class="ic">pve-edge-01</span> &amp; <span class="ic">pve-data-01</span>). Auf dem ersten läuft die OPNsense als VM mit Zenarmor, die das Netz in sechs VLANs aufteilt: Management, Services, Clients, Automatisierung, NAS und IoT. Technitium DNS beantwortet alle Anfragen im Netz, filtert Werbung, fragt nach außen verschlüsselt über Quad9 (DoH) und verwaltet die lokale Zone <span class="ic">tre.internal</span>, in die OPNsense neue Geräte automatisch einträgt. Für den Zugriff von unterwegs routet ein eigener Debian-Container mit Tailscale alle sechs Netze.</p>
+    </div>
+  </div>
+
+  <p class="section-heading">🎯 Architektur-Ziele</p>
+  <ul class="panel-list">
+    <li class="pl-b"><strong>Schaden begrenzen:</strong> Wird ein Container oder die Automatisierungs-VM übernommen, sperrt <span class="ic">Block RFC1918</span> den Weg in die anderen internen Netze</li>
+    <li class="pl-b"><strong>Netz unabhängig vom Datenserver:</strong> <span class="ic">pve-edge-01</span> hält Firewall, DNS (<span class="ic">tre.internal</span>) und VPN am Laufen, auch wenn <span class="ic">pve-data-01</span> gewartet oder neu gestartet wird. Deshalb gibt es bewusst keinen Proxmox-Cluster, der bei zwei Nodes sein Quorum verlieren könnte</li>
+    <li class="pl-b"><strong>Backups auf dem anderen Gerät:</strong> Die OPNsense-VM und alle Container werden über das Netz auf den Proxmox Backup Server (<span class="ic">PBS LXC</span> auf <span class="ic">pve-data-01</span>) gesichert, die Firewall per Snapshot im laufenden Betrieb</li>
+  </ul>
+
+  <p class="section-heading">🖥️ Hardware-Stack</p>
+  <ul class="panel-list">
+    <li class="pl-p"><strong>pve-edge-01 (Edge- &amp; Perimeter-Node):</strong> Lenovo ThinkCentre M720q Tiny · Intel Core i5-8400T (6C/6T, 35W) · 16 GB DDR4 RAM · 256 GB NVMe + 128 GB SATA SSD · Onboard GbE (<span class="ic">vmbr0</span>) + PCIe Dual-Port GbE NIC (<span class="ic">vmbr1</span> WAN-Transit, <span class="ic">vmbr2</span> LAN-VLAN-Trunk)</li>
+    <li class="pl-p"><strong>pve-data-01 (Compute-, Storage- &amp; KI-Node):</strong> Lenovo ThinkCentre M720q Tiny · Intel Core i5-8400T (6C/6T, 35W) · 32 GB DDR4 RAM · 1 TB WD Blue SN5000 NVMe + JMicron JMB58x 5-Port SATA-Controller · Single-NIC 802.1Q VLAN-Trunk (<span class="ic">vmbr0</span>)</li>
+    <li class="pl-p"><strong>Core Switch:</strong> TP-Link TL-SG608E · 8-Port Gigabit Easy Smart Managed Switch (802.1Q VLAN-Tagging &amp; PVID-Trunking)</li>
+    <li class="pl-p"><strong>WAN-Vornetz:</strong> AVM Fritz!Box 7530 AX (<span class="ic">192.168.178.X/24</span> · DSL-Modem &amp; WAN-Transitnetz)</li>
+  </ul>
+
+  <p class="section-heading">🔌 Physische Verkabelung &amp; Switch-Port-Mapping</p>
+  <ol class="docs-ol">
+    <li><strong>WAN-Transit:</strong> Cat6 von Fritz!Box 7530 AX → <span class="ic">pve-edge-01</span> PCIe Port 1 (<span class="ic">vmbr1</span>, ohne Host-IP direkt an OPNsense <span class="ic">vtnet0</span>)</li>
+    <li><strong>Core VLAN-Trunk (Port 8):</strong> <span class="ic">pve-edge-01</span> PCIe Port 2 (<span class="ic">vmbr2</span>, OPNsense <span class="ic">vtnet1</span>) → TP-Link Switch <strong>Port 8</strong> (Tagged VLANs <span class="ic">10, 20, 30, 40, 50, 60</span>)</li>
+    <li><strong>Edge Host-Mgmt (Port 1):</strong> <span class="ic">pve-edge-01</span> Onboard NIC (<span class="ic">vmbr0</span>) → Switch <strong>Port 1</strong> (Untagged Access VLAN 10, PVID 10)</li>
+    <li><strong>Data Hybrid-Trunk (Port 2):</strong> <span class="ic">pve-data-01</span> Onboard NIC (<span class="ic">vmbr0</span> VLAN-aware) → Switch <strong>Port 2</strong> (Untagged VLAN 10 PVID 10 + Tagged VLANs <span class="ic">20, 30, 40, 50, 60</span>)</li>
+    <li><strong>Client-, IoT- und freie Ports (Ports 3–7):</strong> <strong>Port 3</strong> = Admin-Workstation (Untagged VLAN 30, PVID 30) · <strong>Port 4 &amp; 5</strong> = Philips Hue Bridge &amp; IP-Kamera (Untagged VLAN 60, PVID 60) · <strong>Port 6 &amp; 7</strong> = frei und deaktiviert (VLAN 99 ohne Gateway)</li>
+  </ol>
+
+  <p class="section-heading">🌐 Netzwerk-Architektur &amp; Rollentrennung</p>
+  <div class="docs-cards">
+    <div class="docs-card">
+      <h4>🛡️ OPNsense VM + Zenarmor — Layer-3-Kern</h4>
+      <ul>
+        <li>Terminiert alle 6 VLAN-Interfaces (<span class="ic">vtnet1</span> + <span class="ic">vlan0.20</span> bis <span class="ic">vlan0.60</span>) auf dem <span class="ic">vmbr2</span>-Trunk</li>
+        <li>Stellt das Standard-Gateway (<span class="ic">.1</span> jedes <span class="ic">/24</span>-Subnetzes) sowie die Kea-DHCPv4-Server bereit</li>
+        <li>Setzt alle Inter-VLAN-Firewallregeln (<span class="ic">RFC1918</span>-Isolierung) und Outbound-NAT durch</li>
+        <li>Prüft den LAN-Verkehr per <strong>Zenarmor L7 Deep Packet Inspection</strong> in Echtzeit</li>
+      </ul>
+    </div>
+    <div class="docs-card">
+      <h4>🔒 Tailscale Subnet Router LXC — Entkoppeltes VPN</h4>
+      <ul>
+        <li>Läuft bewusst als eigener Debian 13 LXC (<span class="ic">10.10.10.XX</span>) statt als OPNsense-Plugin</li>
+        <li>Verhindert FreeBSD-Kernel-/<span class="ic">netmap</span>-Konflikte mit Zenarmor auf der Firewall</li>
+        <li>Routet alle 6 Subnetze (<span class="ic">10.10.10.0/24</span> bis <span class="ic">10.10.60.0/24</span>) via Kernel-Forwarding &amp; SNAT ins Tailnet</li>
+      </ul>
+    </div>
+    <div class="docs-card">
+      <h4>🚫 Technitium DNS — Autoritativer Resolver &amp; DoH</h4>
+      <ul>
+        <li>Zentraler DNS-Blocker und Resolver (<span class="ic">10.10.10.XX</span>) für alle VLANs und Tailscale-Clients</li>
+        <li>Verschlüsselter Upstream via Quad9 DoH (<span class="ic">https://dns10.quad9.net/dns-query</span>)</li>
+        <li>Verwaltet die autoritative Zone <span class="ic">tre.internal</span> inkl. dynamischer Kea-DHCP-Updates (RFC 2136)</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="section-heading">🔀 6-Zonen-VLAN-Layout</p>
+  <div class="docs-table-wrap">
+    <table class="docs-table">
+      <tr><th>VLAN</th><th>Tag</th><th>Subnetz</th><th>Gateway</th><th>Zweck &amp; zugeordnete Systeme</th></tr>
+      <tr><td>mgmt</td><td>10</td><td><span class="ic">10.10.10.0/24</span></td><td>10.10.10.1</td><td><span class="ic">pve-edge-01</span> (<span class="ic">.XX</span>), <span class="ic">pve-data-01</span> (<span class="ic">.XX</span>), Technitium DNS (<span class="ic">.XX</span>), Tailscale LXC (<span class="ic">.XX</span>), TP-Link Switch (<span class="ic">.XX</span>)</td></tr>
+      <tr><td>services</td><td>20</td><td><span class="ic">10.10.20.0/24</span></td><td>10.10.20.1</td><td>PBS Backup LXC, <span class="ic">homelab-site</span> nginx LXC (<span class="ic">http://map.tre.internal</span>), Docker LXC</td></tr>
+      <tr><td>clients</td><td>30</td><td><span class="ic">10.10.30.0/24</span></td><td>10.10.30.1</td><td>Vertrauenswürdige Arbeitsplatzrechner (Admin-Workstation / Daily Driver, Arbeits-Laptop)</td></tr>
+      <tr><td>automation</td><td>40</td><td><span class="ic">10.10.40.0/24</span></td><td>10.10.40.1</td><td>Isolierte KI- &amp; Automatisierungs-Zone: <span class="ic">agent40 VM</span> (Internet-only, striktes <span class="ic">Block RFC1918</span>)</td></tr>
+      <tr><td>nas</td><td>50</td><td><span class="ic">10.10.50.0/24</span></td><td>10.10.50.1</td><td>Reserviert für den späteren Speicherausbau am 5-Port-SATA-Controller (JMicron JMB58x)</td></tr>
+      <tr><td>iot</td><td>60</td><td><span class="ic">10.10.60.0/24</span></td><td>10.10.60.1</td><td>Nicht vertrauenswürdige Smart-Home-Geräte: Philips Hue Bridge, IP-Kamera, Smart-TV (<span class="ic">Block RFC1918</span>)</td></tr>
+    </table>
+  </div>
+
+  <p class="section-heading">📊 LXC- &amp; VM-Ressourcenbilanz</p>
+  <div class="docs-table-wrap">
+    <table class="docs-table">
+      <tr><th>System / Dienst</th><th>Typ</th><th>Node</th><th>IP(s)</th><th>RAM</th><th>vCPU</th><th>VLAN</th></tr>
+      <tr><td>OPNsense + Zenarmor (101)</td><td>VM</td><td>pve-edge-01</td><td>WAN 192.168.178.XX · Gateways 10.10.X.1</td><td>8 GiB</td><td>2</td><td>Trunk (10–60)</td></tr>
+      <tr><td>tailscale-router (100)</td><td>LXC</td><td>pve-edge-01</td><td>10.10.10.XX</td><td>512 MiB</td><td>1</td><td>mgmt (10)</td></tr>
+      <tr><td>technitiumdns (102)</td><td>LXC</td><td>pve-edge-01</td><td>10.10.10.XX</td><td>512 MiB</td><td>1</td><td>mgmt (10)</td></tr>
+      <tr><td>pve-pbs-01 (PBS 101)</td><td>LXC</td><td>pve-data-01</td><td>10.10.10.XX → 10.10.20.XX</td><td>1 GiB</td><td>1</td><td>services (20)</td></tr>
+      <tr><td>homelab-site</td><td>LXC</td><td>pve-data-01</td><td>10.10.20.XX</td><td>256 MiB</td><td>1</td><td>services (20)</td></tr>
+      <tr><td>docker (100)</td><td>LXC</td><td>pve-data-01</td><td>10.10.20.XX</td><td>2 GiB</td><td>2</td><td>services (20)</td></tr>
+      <tr><td>agent40 VM</td><td>VM</td><td>pve-data-01</td><td>10.10.40.XX</td><td>2 GiB</td><td>2</td><td>automation (40)</td></tr>
+    </table>
+  </div>
+
+  <p class="section-heading">🏷️ Lokale DNS-Zone <span class="ic">tre.internal</span> (Technitium DNS)</p>
+  <div class="docs-table-wrap">
+    <table class="docs-table">
+      <tr><th>FQDN (Hostname)</th><th>Ziel-IP</th><th>Dienst</th></tr>
+      <tr><td><span class="ic">opnsense.tre.internal</span></td><td>10.10.10.1</td><td>OPNsense Firewall &amp; Zenarmor Administration</td></tr>
+      <tr><td><span class="ic">switch.tre.internal</span></td><td>10.10.10.XX</td><td>TP-Link TL-SG608E Easy Smart Switch</td></tr>
+      <tr><td><span class="ic">pve-edge.tre.internal</span></td><td>10.10.10.XX</td><td>Proxmox VE Edge-Node Web-GUI (:8006)</td></tr>
+      <tr><td><span class="ic">pve-data.tre.internal</span></td><td>10.10.10.XX</td><td>Proxmox VE Data-Node Web-GUI (:8006)</td></tr>
+      <tr><td><span class="ic">dns.tre.internal</span></td><td>10.10.10.XX</td><td>Technitium DNS Web-Konsole (:5380)</td></tr>
+      <tr><td><span class="ic">tailscale.tre.internal</span></td><td>10.10.10.XX</td><td>Tailscale Subnet Router LXC (CT 100)</td></tr>
+      <tr><td><span class="ic">pbs.tre.internal</span></td><td>10.10.20.XX</td><td>Proxmox Backup Server Web-GUI (:8007 in VLAN 20)</td></tr>
+      <tr><td><span class="ic">map.tre.internal</span></td><td>10.10.20.XX</td><td>homelab-site LXC (dieses interaktive Topologie-Dashboard)</td></tr>
+      <tr><td><span class="ic">agent.tre.internal</span></td><td>10.10.40.XX</td><td>agent40 KI-Automatisierungs-VM (VLAN 40)</td></tr>
+    </table>
+  </div>
+
+  <p class="section-heading">🔒 Härtung</p>
+  <ul class="panel-list">
+    <li class="pl-g"><strong>Echte Kernel-Isolation für VLAN 40:</strong> <span class="ic">agent40</span> läuft als dedizierte KVM-VM (Ubuntu 24.04 LTS Headless) statt als LXC, da dort der externe Webhook-Tunnel terminiert</li>
+    <li class="pl-g"><strong>Restriktive Dateirechte auf der agent40 VM:</strong>
+      <div class="docs-codelist">
+        <span class="path">/opt/agent40/.env</span>          <span class="mode">chmod 600</span>
+        <span class="path">~/.msmtprc</span>                 <span class="mode">chmod 600</span>
+        <span class="path">~/.config/ngrok/ngrok.yml</span>  <span class="mode">chmod 600</span>
+        <span class="path">/opt/webhook/index.js</span>      <span class="mode">chmod 640</span>
+      </div>
+    </li>
+    <li class="pl-g"><strong>Read-Only OneDrive Vault-Mirror (<span class="ic">rclone</span>):</strong> Synchronisiert im Einweg-Modus ausschließlich <span class="ic">30_Workspace/</span> nach <span class="ic">/opt/vault-mirror/30_Workspace</span> (keine privaten Ordner, keine Schreibrechte auf OneDrive)</li>
+    <li class="pl-g"><strong>Gehärteter Webhook-Listener (<span class="ic">webhook.service</span>):</strong> Konstantzeit-Signaturprüfung via <span class="ic">crypto.timingSafeEqual</span> (HMAC-SHA256), 5-Sekunden Per-IP Rate-Limiting (<span class="ic">HTTP 429</span>) und 5s <span class="ic">execSync</span>-Timeout</li>
+    <li class="pl-g"><strong>Repo-gebundener Read-Only Deploy Key auf <span class="ic">homelab-site</span>:</strong> Selbst bei Kompromittierung des Webservers besteht lediglich Lesezugriff auf dieses eine Dokumentations-Repository über <span class="ic">ssh.github.com:443</span></li>
+    <li class="pl-g"><strong>2FA (TOTP) &amp; Host-Isolation:</strong> Proxmox-Management und OPNsense sind mit 2FA gesichert; das WAN-Transitnetz (<span class="ic">vmbr1</span>) besitzt keine IP-Adresse auf dem Proxmox-Host</li>
+  </ul>
+
+  <p class="section-heading">📚 Schnelleinstieg in die weiteren Tabs</p>
+  <ul class="panel-list">
+    <li class="pl-b"><strong class="tab-link" data-tab="topology">Topologie</strong> — Interaktive Knotenkarte; Klick auf jeden Knoten oder VLAN-Chip öffnet das Detail-Panel und beleuchtet alle aktiven Pfade</li>
+    <li class="pl-b"><strong class="tab-link" data-tab="vlans">VLANs</strong> — Alle 6 VLAN-Zonen mit zugeordneten Systemen und OPNsense-Firewallregeln auf einen Blick</li>
+    <li class="pl-b"><strong class="tab-link" data-tab="agent40">agent40</strong> — Cron-Zeitpläne, Read-Only Vault-Mirror und Auto-Deploy-Pipeline</li>
+    <li class="pl-b"><strong class="tab-link" data-tab="troubleshooting">Troubleshooting</strong> — Dokumentierte Fehlerszenarien, Root-Cause-Analysen und permanente Fixes aus dem Betrieb</li>
+  </ul>
+
+</section>
+
+</main>
+
+<!-- ── DETAIL PANEL ── -->
+<div id="detail-panel">
+  <div class="panel-head">
+    <span class="panel-ico" id="p-ico">🖥️</span>
+    <div class="panel-meta">
+      <h2 id="p-name">–</h2>
+      <span class="panel-type" id="p-type">–</span>
+    </div>
+    <button class="panel-close" id="panel-close">✕</button>
+  </div>
+  <div class="panel-body" id="p-body"></div>
+</div>
+
+<script>
+// ── Tab switching ────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'topology') requestAnimationFrame(() => setTimeout(drawConns, 60));
+  });
+});
+document.querySelectorAll('.tab-link').forEach(link => {
+  link.addEventListener('click', () => {
+    const target = document.querySelector('.tab-btn[data-tab="' + link.dataset.tab + '"]');
+    if (!target) return;
+    target.click();
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+  });
+});
+
+// ── Accordions ───────────────────────────────────────────────
+document.querySelectorAll('.acc-trigger').forEach(t => {
+  t.addEventListener('click', () => {
+    const body = t.nextElementSibling;
+    const wasOpen = body.classList.contains('open');
+    t.closest('.accordion').querySelectorAll('.acc-body').forEach(b => b.classList.remove('open'));
+    t.closest('.accordion').querySelectorAll('.acc-trigger').forEach(x => x.classList.remove('open'));
+    if (!wasOpen) { body.classList.add('open'); t.classList.add('open'); }
+  });
+});
+
+// ── Connection metadata ───────────────────────────────────────
+const NODE_NAMES = {
+  'n-tailscale':     { name: 'Tailscale',          ico: '🔒' },
+  'n-github':        { name: 'GitHub',             ico: '⑂'  },
+  'n-gemini':        { name: 'Google Gemini',      ico: '🤖' },
+  'n-openmeteo':     { name: 'Open-Meteo',         ico: '🌤' },
+  'n-smtp':          { name: 'SMTP-Provider',      ico: '📧' },
+  'n-router':        { name: 'Fritz!Box 7530 AX',  ico: '📡' },
+  'n-switch':        { name: 'TP-Link TL-SG608E',  ico: '🔀' },
+  'n-opnsense':      { name: 'OPNsense VM',        ico: '🛡️' },
+  'n-technitium':    { name: 'Technitium DNS',     ico: '🚫' },
+  'n-tailscale-lxc': { name: 'Tailscale Router',   ico: '🔒' },
+  'n-pve-hosts':     { name: 'pve-edge & data',    ico: '🖥️' },
+  'n-homelab-site':  { name: 'homelab-site',       ico: '📖' },
+  'n-pbs':           { name: 'PBS Backup',         ico: '💾' },
+  'n-docker':        { name: 'Docker Host',        ico: '🐳' },
+  'n-reports':       { name: 'Cron-Berichte',      ico: '📅' },
+  'n-gemini-cli':    { name: 'Gemini CLI',         ico: '💬' },
+  'n-msmtp':         { name: 'msmtp',              ico: '📤' },
+  'n-ngrok':         { name: 'ngrok',              ico: '🌐' },
+  'n-webhook':       { name: 'webhook.service',    ico: '🪝' },
+  'n-clients':       { name: 'Admin-PC & Laptop',  ico: '💻' },
+  'n-nas':           { name: 'NAS / Storage',      ico: '🗄️' },
+  'n-iot':           { name: 'Hue & IP-Kamera',    ico: '💡' },
+};
+
+const CLS_META = {
+  'cl-phys': { color: 'var(--purple)', label: 'Physisch'   },
+  'cl-net':  { color: 'var(--blue)',   label: 'Routing'    },
+  'cl-dns':  { color: 'var(--green)',  label: 'DNS'        },
+  'cl-data': { color: 'var(--teal)',   label: 'Daten/API'  },
+  'cl-mgmt': { color: '#c0c0c0',       label: 'Mgmt/Remote'},
+  'cl-dep':  { color: 'var(--yellow)', label: 'Auto-Deploy'},
+};
+
+const ALL_VLANS = ['v10','v20','v30','v40','v50','v60'];
+const NODE_VLAN = {
+  'n-router':        [],
+  'n-switch':        ALL_VLANS,
+  'n-opnsense':      ALL_VLANS,
+  'n-tailscale':     ALL_VLANS,
+  'n-tailscale-lxc': ALL_VLANS,
+  'n-technitium':    ['v10'],
+  'n-pve-hosts':     ['v10'],
+  'n-homelab-site':  ['v20'],
+  'n-pbs':           ['v20'],
+  'n-docker':        ['v20'],
+  'n-clients':       ['v30'],
+  'n-reports':       ['v40'],
+  'n-gemini-cli':    ['v40'],
+  'n-msmtp':         ['v40'],
+  'n-ngrok':         ['v40'],
+  'n-webhook':       ['v40'],
+  'n-nas':           ['v50'],
+  'n-iot':           ['v60'],
+};
+
+// ── Node & VLAN detail data (Deutsch, .XX Maskierung) ─────────
+const ND = {
+  tailscale: {
+    ico: '🔒', name: 'Tailscale Mesh VPN', type: 'Externer Dienst · WireGuard Overlay',
+    s: [
+      { h: 'Rolle', kv: [
+        ['Zweck',      'Verschlüsselter Remote-Zugriff auf das gesamte Homelab'],
+        ['Architektur','Entkoppelter Debian 13 LXC Subnet Router (10.10.10.XX)'],
+        ['Routen',     'Alle 6 VLANs (10.10.10.0/24 bis 10.10.60.0/24)'],
+      ]},
+      { h: 'Propagierte Subnetze', kv: [
+        ['VLAN 10 mgmt',     '10.10.10.0/24'],
+        ['VLAN 20 services', '10.10.20.0/24'],
+        ['VLAN 30 clients',  '10.10.30.0/24'],
+        ['VLAN 40 auto',     '10.10.40.0/24'],
+        ['VLAN 50 nas',      '10.10.50.0/24'],
+        ['VLAN 60 iot',      '10.10.60.0/24'],
+      ]},
+      { h: 'Erreichbare Dienste unterwegs', li: [
+        {t:'Proxmox VE Edge & Data — pve-edge.tre.internal / pve-data.tre.internal (:8006)',c:'pl-b'},
+        {t:'OPNsense + Zenarmor GUI — opnsense.tre.internal (10.10.10.1)',c:'pl-b'},
+        {t:'Technitium DNS — dns.tre.internal (10.10.10.XX:5380)',c:'pl-b'},
+        {t:'PBS Backup Server — pbs.tre.internal (10.10.20.XX:8007)',c:'pl-b'},
+        {t:'homelab-site (diese Seite) — map.tre.internal (10.10.20.XX)',c:'pl-b'},
+        {t:'agent40 VM (SSH-Wartung) — agent.tre.internal (10.10.40.XX)',c:'pl-b'},
+      ]},
+      { h: 'Architektur-Besonderheit', li: [
+        {t:'Läuft absichtlich nicht als OPNsense-Plugin, weil sich Tailscale und Zenarmor im FreeBSD-Netzwerkstack (netmap) gestört haben',c:'pl-g'},
+        {t:'Leitet per IP-Forwarding und SNAT weiter, dadurch läuft auch VPN-Verkehr von unterwegs durch die OPNsense und Zenarmor',c:'pl-g'},
+      ]},
+    ]
+  },
+  'vlan-v10': {
+    ico: '⚙️', name: 'VLAN 10 — mgmt', type: 'Management-Ebene · Tag 10',
+    s: [
+      { h: 'Netzwerk', kv: [
+        ['Subnetz',    '10.10.10.0/24'],
+        ['Gateway',    '10.10.10.1  (OPNsense)'],
+        ['DHCP-Range', '10.10.10.XX – 10.10.10.XX'],
+        ['VLAN-Tag',   '10 (PVID 10 auf Switch Port 1, 2 & 8)'],
+      ]},
+      { h: 'Zugeordnete Systeme', li: [
+        {t:'pve-edge-01 (10.10.10.XX) & pve-data-01 (10.10.10.XX)',c:'pl-p'},
+        {t:'TP-Link TL-SG608E Switch-Management (10.10.10.XX)',c:'pl-p'},
+        {t:'Technitium DNS Server LXC (10.10.10.XX)',c:'pl-b'},
+        {t:'Tailscale Subnet Router LXC (10.10.10.XX)',c:'pl-b'},
+      ]},
+      { h: 'Firewall — Egress-Regeln (Top-Down)', li: [
+        {t:'Pass TCP/UDP 10.10.10.XX → *:53 (Technitium DoH-Bootstrap)',c:'pl-g'},
+        {t:'Pass TCP/UDP → 10.10.10.XX:53 (Interne DNS-Auflösung tre.internal)',c:'pl-g'},
+        {t:'Pass TCP → 10.10.20.XX:8007 (Cross-Node PBS Backup-Stream)',c:'pl-g'},
+        {t:'Block * → RFC1918 (Kein ungeplanter Lateral-Traffic)',c:'pl-r'},
+        {t:'Pass TCP → *:443 / *:80 (Updates, Quad9 DoH, Tailscale)',c:'pl-g'},
+      ]},
+    ]
+  },
+  'vlan-v20': {
+    ico: '🩵', name: 'VLAN 20 — services', type: 'Self-Hosted Dienste · Tag 20',
+    s: [
+      { h: 'Netzwerk', kv: [
+        ['Subnetz',    '10.10.20.0/24'],
+        ['Gateway',    '10.10.20.1  (OPNsense)'],
+        ['DHCP-Range', '10.10.20.XX – 10.10.20.XX'],
+        ['VLAN-Tag',   '20 (getaggt auf Switch Port 2 & Port 8)'],
+      ]},
+      { h: 'Zugeordnete Container (auf pve-data-01)', li: [
+        {t:'homelab-site LXC (10.10.20.XX) · nginx Webserver für http://map.tre.internal',c:'pl-b'},
+        {t:'pve-pbs-01 LXC 101 (10.10.20.XX:8007) · Proxmox Backup Server (200 GB LVM-Thin)',c:'pl-b'},
+        {t:'docker LXC 100 (10.10.20.XX) · Container-Workloads',c:'pl-b'},
+      ]},
+      { h: 'Firewall — Egress-Regeln (Top-Down)', li: [
+        {t:'Pass TCP/UDP → Technitium DNS 10.10.10.XX:53',c:'pl-g'},
+        {t:'Block * → RFC1918 (Keine Verbindungen in Mgmt/Client/NAS-Netze)',c:'pl-r'},
+        {t:'Pass TCP → *:443 (HTTPS Updates & GitHub SSH-over-443)',c:'pl-g'},
+        {t:'Pass TCP → *:80 (APT-Paketquellen)',c:'pl-g'},
+        {t:'Block * → * (Default Deny)',c:'pl-r'},
+      ]},
+    ]
+  },
+  'vlan-v30': {
+    ico: '💻', name: 'VLAN 30 — clients', type: 'Vertrauenswürdige Arbeitsplätze · Tag 30',
+    s: [
+      { h: 'Netzwerk', kv: [
+        ['Subnetz',    '10.10.30.0/24'],
+        ['Gateway',    '10.10.30.1  (OPNsense)'],
+        ['DHCP-Range', '10.10.30.XX – 10.10.30.XX'],
+        ['VLAN-Tag',   '30 (Untagged PVID 30 auf Switch Port 3)'],
+      ]},
+      { h: 'Hybrides Zero-Trust-Modell', li: [
+        {t:'Gezielter Admin-Zugriff vom Haupt-PC auf VLAN 10 (:22, :443, :8006)',c:'pl-g'},
+        {t:'Zugriff auf Self-Hosted Services (VLAN 20) und NAS-Shares (VLAN 50)',c:'pl-g'},
+        {t:'Blockiert gegenüber VLAN 40 (KI-Automation) & VLAN 60 (IoT)',c:'pl-r'},
+      ]},
+    ]
+  },
+  'vlan-v40': {
+    ico: '🤖', name: 'VLAN 40 — automation', type: 'KI-Automatisierung · Tag 40 · Internet-only',
+    s: [
+      { h: 'Netzwerk', kv: [
+        ['Subnetz',    '10.10.40.0/24'],
+        ['Gateway',    '10.10.40.1  (OPNsense)'],
+        ['DHCP-Range', '10.10.40.XX – 10.10.40.XX'],
+        ['VLAN-Tag',   '40 (getaggt auf Switch Port 2 & Port 8)'],
+      ]},
+      { h: 'Host-VM (KVM Kernel-Isolation)', li: [
+        {t:'agent40 VM — Ubuntu Server 24.04 LTS Headless — 10.10.40.XX',c:'pl-r'},
+        {t:'Führt Cron-Berichte (Gemini CLI + rclone Mirror + msmtp) und Auto-Deploy (ngrok + webhook.service) aus',c:'pl-b'},
+      ]},
+      { h: 'Firewall — Strikte Egress-Whitelist', li: [
+        {t:'Pass TCP/UDP → Technitium DNS 10.10.10.XX:53 (Nur DNS erlaubt)',c:'pl-g'},
+        {t:'Block * → Alias RFC1918 (kein Zugriff auf interne Netze)',c:'pl-r'},
+        {t:'Pass TCP → *:443 (Gemini API, OneDrive rclone, Open-Meteo, GitHub :443, ngrok)',c:'pl-g'},
+        {t:'Pass TCP → *:80 (APT-Paketquellen)',c:'pl-g'},
+        {t:'Pass TCP → *:465 (Implicit TLS SMTPS für msmtp)',c:'pl-g'},
+        {t:'Block * → * (alles andere verwerfen und loggen)',c:'pl-r'},
+      ]},
+    ]
+  },
+  'vlan-v50': {
+    ico: '🗄️', name: 'VLAN 50 — nas / storage', type: 'Dediziertes Storage-Netz · Tag 50',
+    s: [
+      { h: 'Netzwerk', kv: [
+        ['Subnetz',    '10.10.50.0/24'],
+        ['Gateway',    '10.10.50.1  (OPNsense)'],
+        ['Hardware',   'JMicron JMB58x 5-Port SATA Controller auf pve-data-01'],
+        ['VLAN-Tag',   '50 (getaggt auf Switch Port 2 & Port 8)'],
+      ]},
+      { h: 'Sicherheitsprofil', li: [
+        {t:'Geplant: SMB/NFS-Freigaben und ein zweites Backup-Ziel',c:'pl-b'},
+        {t:'Block * → RFC1918 & kein offener WAN-Egress aus dem Storage-Netz',c:'pl-r'},
+      ]},
+    ]
+  },
+  'vlan-v60': {
+    ico: '💡', name: 'VLAN 60 — iot / smarthome', type: 'Isoliertes Smart-Home-Netz · Tag 60',
+    s: [
+      { h: 'Netzwerk', kv: [
+        ['Subnetz',    '10.10.60.0/24'],
+        ['Gateway',    '10.10.60.1  (OPNsense)'],
+        ['Switch-Ports','Port 4 (Hue Bridge) & Port 5 (IP-Kamera) · PVID 60'],
+        ['VLAN-Tag',   '60'],
+      ]},
+      { h: 'Firewall — Strikte Isolierung', li: [
+        {t:'Pass TCP/UDP → 10.10.60.1:53 (DNS) & :123 (NTP)',c:'pl-g'},
+        {t:'Block * → Alias RFC1918 (kein Zugriff auf Server, PCs oder NAS)',c:'pl-r'},
+        {t:'Pass TCP → !RFC1918 :80/:443 (Hersteller-Cloud)',c:'pl-g'},
+      ]},
+    ]
+  },
+  github: {
+    ico: '⑂', name: 'GitHub', type: 'Externer Dienst · Code & Auto-Deploy',
+    s: [
+      { h: 'Repositories', kv: [
+        ['Portfolio & Site','homelab-portfolio (main)'],
+        ['Auto-Deploy Ziel','/opt/agent40 auf agent40 VM (VLAN 40)'],
+        ['Dashboard Ziel',  '/opt/homelab-site auf homelab-site LXC (VLAN 20)'],
+      ]},
+      { h: 'Webhook', kv: [
+        ['Event',       'push (main)'],
+        ['Content-Type','application/json'],
+        ['Sicherheit',  'HMAC-SHA256 (crypto.timingSafeEqual)'],
+        ['Payload-URL', 'https://<static-domain>.ngrok-free.app/webhook'],
+      ]},
+      { h: 'SSH-over-443 Konfiguration', li: [
+        {t:'Schlüssel: ~/.ssh/id_ed25519 (Ed25519 Deploy Keys)',c:'pl-g'},
+        {t:'Routet über ssh.github.com:443, da Port 22 auf VLAN 20 & VLAN 40 gesperrt ist',c:'pl-y'},
+        {t:'homelab-site nutzt einen strikten Read-Only Deploy Key (Allow write access deaktiviert)',c:'pl-g'},
+      ]},
+    ]
+  },
+  gemini: {
+    ico: '🤖', name: 'Google Gemini API & OneDrive', type: 'Externe Cloud-Dienste (HTTPS :443)',
+    s: [
+      { h: 'KI-Engine & Vault-Mirror', kv: [
+        ['KI-Modell',   'Google Gemini CLI / API (Headless via Cron)'],
+        ['Vault-Quelle','OneDrive (Obsidian Remotely Save Sync)'],
+        ['Mirror-Tool', 'rclone sync (strikter One-Way / Read-Only Modus)'],
+        ['Port',        'TCP 443 (HTTPS)'],
+      ]},
+      { h: 'Datensparsamkeit & Schutz vor Sync-Konflikten', li: [
+        {t:'rclone spiegelt vor jedem Lern-Bericht ausschließlich 30_Workspace/ nach /opt/vault-mirror/30_Workspace',c:'pl-g'},
+        {t:'Die VM schreibt nie nach OneDrive zurück, deshalb gibt es keine Konflikte mit Remotely Save',c:'pl-g'},
+        {t:'Private Vault-Ordner verlassen niemals OneDrive in Richtung KI-VM',c:'pl-b'},
+      ]},
+    ]
+  },
+  openmeteo: {
+    ico: '🌤', name: 'Open-Meteo API', type: 'Externe Wetter-API (HTTPS :443)',
+    s: [
+      { h: 'Einsatz', kv: [
+        ['Genutzt von','Morning Briefing & Weekly Briefing'],
+        ['Standort',   'Konfigurierbar über .env (Abfrage per HTTPS :443)'],
+        ['Auth',       'Keine (öffentliche, kostenfreie REST-API)'],
+      ]},
+      { h: 'Gelieferte Daten', li: [
+        {t:'Tageshöchst-/Tiefstwerte, Niederschlagswahrscheinlichkeit & 7-Tage-Trend (lokal via .env)',c:'pl-b'},
+      ]},
+    ]
+  },
+  smtp: {
+    ico: '📧', name: 'SMTP-Provider', type: 'Externer Mail-Relay (SMTPS :465)',
+    s: [
+      { h: 'SMTP-Konfiguration', kv: [
+        ['Host',  'smtp.example.com'],
+        ['Port',  '465 (Implicit TLS / tls_starttls off)'],
+        ['Auth',  'Dediziertes App-Passwort'],
+        ['Client','msmtp (~/.msmtprc mit chmod 600)'],
+      ]},
+      { h: 'Härtung', li: [
+        {t:'Dediziertes Absender-Postfach für agent40 — isoliert vom persönlichen Hauptpostfach',c:'pl-g'},
+        {t:'Konfiguration liegt AppArmor-konform unter ~/.msmtprc',c:'pl-y'},
+      ]},
+    ]
+  },
+  router: {
+    ico: '📡', name: 'AVM Fritz!Box 7530 AX', type: 'WAN-Vornetz & DSL-Gateway',
+    s: [
+      { h: 'Netzwerk', kv: [
+        ['Transit-IP',  '192.168.178.X/24'],
+        ['Rolle',       'VDSL-Modem & primäres NAT zum ISP'],
+        ['Port-Forward','Keine (Zero-Inbound-Architektur)'],
+      ]},
+      { h: 'Physische Anbindung', li: [
+        {t:'Cat6-Kabel direkt an PCIe Dual-NIC Port 1 (enp3s0 / vmbr1) von pve-edge-01',c:'pl-p'},
+        {t:'Proxmox besitzt auf vmbr1 keine eigene IP-Adresse (Management-Isolation vom WAN-Vornetz)',c:'pl-g'},
+      ]},
+    ]
+  },
+  switch: {
+    ico: '🔀', name: 'TP-Link TL-SG608E', type: '8-Port Gigabit Easy Smart Managed Switch',
+    s: [
+      { h: 'Gerät', kv: [
+        ['Management-IP','10.10.10.XX (VLAN 10)'],
+        ['Standard',     'IEEE 802.1Q VLAN-Tagging & PVID'],
+        ['Bauform',      'Standalone 8-Port GbE Metallgehäuse'],
+      ]},
+      { h: '802.1Q Port-Belegung', li: [
+        {t:'Port 1: pve-edge-01 vmbr0 — Untagged VLAN 10 (PVID 10)',c:'pl-b'},
+        {t:'Port 2: pve-data-01 vmbr0 — Hybrid-Trunk (Untagged 10 PVID 10 + Tagged 20, 30, 40, 50, 60)',c:'pl-b'},
+        {t:'Port 3: Admin-Workstation — Untagged VLAN 30 (PVID 30)',c:'pl-b'},
+        {t:'Port 4 & 5: Philips Hue Bridge & IP-Kamera — Untagged VLAN 60 (PVID 60)',c:'pl-r'},
+        {t:'Port 6 & 7: frei und deaktiviert — VLAN 99 ohne Gateway',c:'pl-g'},
+        {t:'Port 8: OPNsense LAN-Uplink (vmbr2) — Tagged Trunk für VLAN 10, 20, 30, 40, 50, 60',c:'pl-p'},
+      ]},
+    ]
+  },
+  opnsense: {
+    ico: '🛡️', name: 'OPNsense VM + Zenarmor DPI', type: 'Core Firewall, Layer-3-Router & L7 Inspection',
+    s: [
+      { h: 'Ressourcen (auf pve-edge-01)', kv: [
+        ['vCPU / RAM','2 vCPU · 8 GB RAM · 20 GB VirtIO SCSI'],
+        ['WAN',       'vtnet0 (vmbr1) → 192.168.178.XX/24'],
+        ['LAN-Trunk', 'vtnet1 (vmbr2) → 10.10.10.1 bis 10.10.60.1'],
+        ['2FA',       'TOTP aktiviert'],
+      ]},
+      { h: 'Verwaltete VLAN-Gateways', kv: [
+        ['VLAN 10 mgmt', '10.10.10.1/24'],
+        ['VLAN 20 srv',  '10.10.20.1/24'],
+        ['VLAN 30 cli',  '10.10.30.1/24'],
+        ['VLAN 40 auto', '10.10.40.1/24'],
+        ['VLAN 50 nas',  '10.10.50.1/24'],
+        ['VLAN 60 iot',  '10.10.60.1/24'],
+      ]},
+      { h: 'Kernfunktionen', li: [
+        {t:'Zentrales Layer-3-Gateway, Kea-DHCPv4-Server und Firewall für alle 6 VLANs',c:'pl-g'},
+        {t:'Zenarmor prüft den Verkehr auf dem LAN-Trunk bis auf Anwendungsebene (L7)',c:'pl-g'},
+        {t:'Unbound DNS als lokaler System-Bootstrap-Resolver',c:'pl-b'},
+      ]},
+    ]
+  },
+  technitium: {
+    ico: '🚫', name: 'Technitium DNS', type: 'LXC 102 — VLAN 10 (mgmt)',
+    s: [
+      { h: 'Ressourcen', kv: [
+        ['IP',      '10.10.10.XX (Port 53 DNS / Port 5380 Web-GUI)'],
+        ['Host',    'pve-edge-01 (VLAN 10)'],
+        ['vCPU/RAM','1 vCPU · 512 MB RAM'],
+        ['Upstream','https://dns10.quad9.net/dns-query (Quad9 DoH)'],
+      ]},
+      { h: 'Lokale DNS-Zone tre.internal', kv: [
+        ['opnsense.tre.internal', '10.10.10.1'],
+        ['switch.tre.internal',   '10.10.10.XX'],
+        ['pve-edge.tre.internal', '10.10.10.XX'],
+        ['pve-data.tre.internal', '10.10.10.XX'],
+        ['dns.tre.internal',      '10.10.10.XX'],
+        ['tailscale.tre.internal','10.10.10.XX'],
+        ['pbs.tre.internal',      '10.10.20.XX (VLAN 20)'],
+        ['map.tre.internal',      '10.10.20.XX (dieses Dashboard)'],
+        ['agent.tre.internal',    '10.10.40.XX (agent40 VM)'],
+      ]},
+      { h: 'Ausfallsicherheit & DDNS', li: [
+        {t:'Wird per OPNsense Kea DHCPv4 und Tailscale Split-DNS an alle Clients verteilt',c:'pl-g'},
+        {t:'Nimmt dynamische Host-Registrierungen (RFC 2136) von OPNsense Kea DDNS entgegen',c:'pl-g'},
+        {t:'Läuft autark auf dem Perimeter-Node pve-edge-01',c:'pl-b'},
+      ]},
+    ]
+  },
+  'tailscale-lxc': {
+    ico: '🔒', name: 'Tailscale Subnet Router', type: 'Debian 13 LXC — VLAN 10 (mgmt)',
+    s: [
+      { h: 'Ressourcen', kv: [
+        ['IP',      '10.10.10.XX (auf pve-edge-01 vmbr0)'],
+        ['vCPU/RAM','1 vCPU · 512 MB RAM · 2 GB Disk'],
+        ['Features','Unprivileged LXC · nesting=1 · /dev/net/tun'],
+      ]},
+      { h: 'Warum entkoppelt von OPNsense?', li: [
+        {t:'Vermeidet FreeBSD-Netmap-Treiberkonflikte mit Zenarmor L7 DPI auf der OPNsense',c:'pl-g'},
+        {t:'Routet alle 6 VLAN-Subnetze via Kernel IP-Forwarding und SNAT ins Tailnet',c:'pl-b'},
+        {t:'Boot Order 1 auf pve-edge-01 garantiert sofortige Remote-Erreichbarkeit nach Stromausfall',c:'pl-g'},
+      ]},
+    ]
+  },
+  'pve-hosts': {
+    ico: '🖥️', name: 'pve-edge-01 & pve-data-01', type: 'Dual-Node Proxmox VE 9.x Hypervisoren',
+    s: [
+      { h: 'Node 1: pve-edge-01 (Perimeter)', kv: [
+        ['Modell', 'Lenovo ThinkCentre M720q Tiny (i5-8400T, 6C)'],
+        ['RAM',    '16 GB DDR4'],
+        ['Storage','256 GB NVMe + 128 GB SATA SSD'],
+        ['NICs',   'Onboard GbE (vmbr0) + PCIe Dual-GbE (vmbr1 WAN, vmbr2 Trunk)'],
+        ['Mgmt-IP','https://pve-edge.tre.internal:8006 (10.10.10.XX)'],
+      ]},
+      { h: 'Node 2: pve-data-01 (Compute & Storage)', kv: [
+        ['Modell', 'Lenovo ThinkCentre M720q Tiny (i5-8400T, 6C)'],
+        ['RAM',    '32 GB DDR4 Dual-Channel'],
+        ['Storage','1 TB WD Blue SN5000 NVMe + JMicron JMB58x 5-Port SATA'],
+        ['NIC',    'Single-NIC 802.1Q VLAN-Aware Bridge (vmbr0 an Port 2)'],
+        ['Mgmt-IP','https://pve-data.tre.internal:8006 (10.10.10.XX)'],
+      ]},
+      { h: 'Bewusste Standalone-Architektur', li: [
+        {t:'Kein Corosync 2-Node-Cluster → verhindert Quorum-Verlust (Read-Only Lock) bei Wartung eines Nodes',c:'pl-g'},
+        {t:'Powertop Autotune aktiv → nur ca. 23–28 Watt Gesamtverbrauch im 24/7-Leerlauf',c:'pl-g'},
+      ]},
+    ]
+  },
+  'homelab-site': {
+    ico: '📖', name: 'homelab-site', type: 'Debian 13 LXC — VLAN 20 (services)',
+    s: [
+      { h: 'Ressourcen', kv: [
+        ['IP',      '10.10.20.XX (statisch reserviert)'],
+        ['vCPU/RAM','1 vCPU · 256 MB RAM · 4 GB Disk'],
+        ['Webserver','nginx liefert /opt/homelab-site/site/index.html aus'],
+        ['URL',     'http://map.tre.internal (Zone tre.internal in Technitium DNS)'],
+      ]},
+      { h: 'Sicherheits- & Deploy-Konzept', li: [
+        {t:'Klonen & Updates über einen repo-gebundenen Read-Only GitHub Deploy Key (Allow write access deaktiviert)',c:'pl-g'},
+        {t:'SSH-Verbindung getunnelt über ssh.github.com:443 (da Port 22 auf VLAN 20 gesperrt ist)',c:'pl-b'},
+        {t:'Wird der Webserver übernommen, kann ein Angreifer weder ins Repository schreiben noch andere Geräte im Heimnetz erreichen',c:'pl-g'},
+      ]},
+    ]
+  },
+  pbs: {
+    ico: '💾', name: 'pve-pbs-01 (PBS LXC 101)', type: 'Proxmox Backup Server — VLAN 20 (services)',
+    s: [
+      { h: 'Ressourcen', kv: [
+        ['IP / Port','https://10.10.20.XX:8007 (TLS Fingerprint)'],
+        ['vCPU / RAM','1 vCPU · 1024 MB RAM (<100 MB im Idle)'],
+        ['Datastore','200 GB LVM-Thin auf 1 TB WD Blue SN5000 NVMe'],
+        ['Wartung',  'Tägliches Prune (GFS) & Garbage Collection'],
+      ]},
+      { h: 'Cross-Node Backup-Architektur', li: [
+        {t:'pve-edge-01 sichert die laufende OPNsense per Snapshot über das Netz auf pve-data-01, die Firewall muss dafür nicht anhalten',c:'pl-g'},
+        {t:'Deduplizierung in 4-MB-Blöcken: gleiche Daten mehrerer Container werden nur einmal gespeichert',c:'pl-b'},
+      ]},
+    ]
+  },
+  docker: {
+    ico: '🐳', name: 'Docker Host (LXC 100)', type: 'LXC-Workload — VLAN 20 (services)',
+    s: [
+      { h: 'Container-Spezifikation', kv: [
+        ['Docker LXC 100','10.10.20.XX · 2 vCPU · 2 GB RAM'],
+        ['Node',          'pve-data-01'],
+        ['VLAN',          'services (Tag 20)'],
+      ]},
+      { h: 'Workload & Härtung', li: [
+        {t:'Hostet leichtgewichtige Container-Dienste in isolierter VLAN 20-Umgebung',c:'pl-g'},
+        {t:'OPNsense Standard-Gateway (10.10.20.1) erzwingt strikte Egress-Whitelist (nur HTTP/HTTPS)',c:'pl-b'},
+      ]},
+    ]
+  },
+  reports: {
+    ico: '📅', name: 'Cron-Berichte', type: 'Service — agent40 VM (VLAN 40)',
+    s: [
+      { h: 'Zeitplan (Crontab)', kv: [
+        ['Morning/Weekly Brief','0 6 * * 1-7 → 06:00 Uhr lokal'],
+        ['Homelab SecOps',      '0 7 * * 1   → Mo 07:00 Uhr lokal'],
+        ['IHK / FISI Impulse',  '0 18 * * 5  → Fr 18:00 Uhr lokal'],
+      ]},
+      { h: 'Datenquellen', li: [
+        {t:'Morning Brief: Kalendertermine + lokale Wettervorhersage (Open-Meteo API)',c:'pl-b'},
+        {t:'SecOps Report: PBS Backup-Status, Node-Health & OPNsense/Zenarmor-Auswertung',c:'pl-y'},
+        {t:'IHK Review: Neue Markdown-Notizen aus /opt/vault-mirror/30_Workspace für die AP1/AP2-Vorbereitung',c:'pl-g'},
+      ]},
+    ]
+  },
+  'gemini-cli': {
+    ico: '💬', name: 'Gemini CLI + rclone Mirror', type: 'Service — agent40 VM (VLAN 40)',
+    s: [
+      { h: 'Laufzeitumgebung', kv: [
+        ['KI-Engine',   'Google Gemini API (gemini-3.5-flash-lite headless)'],
+        ['Vault-Mirror','rclone sync onedrive:Apps/remotely-save/&lt;vault&gt;/30_Workspace → /opt/vault-mirror/30_Workspace'],
+        ['Port',        'TCP 443 (HTTPS ausgehend)'],
+      ]},
+      { h: 'Ablauf im Skript', li: [
+        {t:'1. Einweg-Synchronisation (Read-Only) von 30_Workspace/ aus OneDrive',c:'pl-b'},
+        {t:'2. Abruf der lokalen Wetterdaten von Open-Meteo',c:'pl-b'},
+        {t:'3. Generierung des strukturierten HTML-E-Mail-Briefings über Gemini',c:'pl-g'},
+      ]},
+    ]
+  },
+  msmtp: {
+    ico: '📤', name: 'msmtp', type: 'SMTP-Client — agent40 VM (VLAN 40)',
+    s: [
+      { h: 'Konfiguration', kv: [
+        ['Status',     'Eingerichtet, Zugangsdaten fehlen noch. Berichte liegen bis dahin lokal als HTML'],
+        ['Config-Pfad','~/.msmtprc (chmod 600, AppArmor-konform)'],
+        ['Umgebung',   '/opt/agent40/.env (chmod 600)'],
+        ['Server',     'smtp.example.com:465 (Implicit TLS)'],
+      ]},
+      { h: 'Wichtige Betriebs-Fixes', li: [
+        {t:'Liegt zwingend in ~/.msmtprc, da AppArmor Zugriffe auf /opt/agent40/.msmtprc blockiert',c:'pl-y'},
+        {t:'IPv6 auf der agent40 VM deaktiviert, um Verbindungs-Hänger im IPv4-only VLAN 40 zu verhindern',c:'pl-g'},
+      ]},
+    ]
+  },
+  ngrok: {
+    ico: '🌐', name: 'ngrok.service', type: 'Systemd Tunnel — auto-deploy (VLAN 40) · geplant',
+    s: [
+      { h: 'Konfiguration', kv: [
+        ['Status',   'Vorbereitet, Token fehlt noch'],
+        ['Unit',     'ngrok.service (systemd, auto-start)'],
+        ['Ziel',     '127.0.0.1:3000 ← *.ngrok-free.app'],
+        ['Protokoll','HTTPS ausgehend über Port 443 (Zero-Inbound)'],
+        ['Config',   '~/.config/ngrok/ngrok.yml (chmod 600)'],
+      ]},
+      { h: 'Sicherheit', li: [
+        {t:'Keinerlei Portweiterleitung (Port-Forwarding) auf der Fritz!Box oder OPNsense erforderlich',c:'pl-g'},
+      ]},
+    ]
+  },
+  webhook: {
+    ico: '🪝', name: 'webhook.service', type: 'Node.js HMAC-Listener — auto-deploy (VLAN 40)',
+    s: [
+      { h: 'Laufzeitumgebung', kv: [
+        ['Unit',      'webhook.service (systemd, auto-start)'],
+        ['Skript',    '/opt/webhook/index.js (chmod 640)'],
+        ['Bind-Port', '127.0.0.1:3000 (nur lokal)'],
+        ['Signatur',  'HMAC-SHA256 (crypto.timingSafeEqual)'],
+        [' Schutz',   '5s Per-IP Rate-Limit (HTTP 429) + 5s execSync Timeout'],
+      ]},
+      { h: 'Ablauf bei GitHub Push', li: [
+        {t:'1. Prüft 5-Sekunden-Cooldown pro Quell-IP (wirft sonst HTTP 429 Too Many Requests)',c:'pl-y'},
+        {t:'2. Prüft X-Hub-Signature-256 kryptografisch sicher gegen WEBHOOK_SECRET',c:'pl-g'},
+        {t:'3. Führt git -C /opt/agent40 pull mit 5s Timeout über ssh.github.com:443 aus',c:'pl-g'},
+      ]},
+    ]
+  },
+  clients: {
+    ico: '💻', name: 'Admin-PC & Arbeits-Laptop', type: 'Trusted Clients — VLAN 30 (clients)',
+    s: [
+      { h: 'Netzwerk', kv: [
+        ['IP',         '10.10.30.XX (DHCP-Reservierung)'],
+        ['Switch-Port','Port 3 am TP-Link TL-SG608E (Untagged PVID 30)'],
+        ['DNS',        '10.10.10.XX (Technitium DNS)'],
+      ]},
+      { h: 'Hybrides Zero-Trust-Modell', li: [
+        {t:'Direkter Zugriff auf Proxmox (:8006), OPNsense (:443), PBS (:8007) und später das NAS (VLAN 50)',c:'pl-g'},
+        {t:'Synchronisiert den Obsidian-Vault via Remotely Save mit OneDrive (Quelle für den rclone-Mirror der agent40 VM)',c:'pl-b'},
+      ]},
+    ]
+  },
+  nas: {
+    ico: '🗄️', name: 'NAS / Storage-Erweiterung', type: 'Storage-Zone — VLAN 50 (nas) · reserviert',
+    s: [
+      { h: 'Hardware-Basis', kv: [
+        ['IP',        '10.10.50.XX'],
+        ['Controller','JMicron JMB58x 5-Port SATA AHCI Controller (pve-data-01)'],
+        ['Status',    'Controller verbaut, noch keine Festplatten'],
+        ['Protokolle','geplant: SMB / NFS / zweites Backup-Ziel'],
+      ]},
+      { h: 'Isolierung', li: [
+        {t:'Dediziertes Storage-VLAN ohne eigenen Verbindungsaufbau in andere interne Netze (Block RFC1918)',c:'pl-g'},
+      ]},
+    ]
+  },
+  iot: {
+    ico: '💡', name: 'Philips Hue Bridge & IP-Kamera', type: 'Untrusted Smart-Home — VLAN 60 (iot)',
+    s: [
+      { h: 'Netzwerk', kv: [
+        ['IP-Bereich', '10.10.60.XX/24'],
+        ['Switch-Ports','Port 4 (Hue Bridge) & Port 5 (IP-Kamera) · PVID 60'],
+      ]},
+      { h: 'Strikte Isolierung', li: [
+        {t:'Block * → Alias RFC1918 verhindert jeglichen Zugriff auf Server, NAS oder PCs',c:'pl-r'},
+        {t:'Erlaubt ausschließlich DNS/NTP am Gateway sowie HTTPS zu den Hersteller-Clouds',c:'pl-b'},
+      ]},
+    ]
+  },
+};
+
+// ── Detail panel logic ───────────────────────────────────────
+const panel     = document.getElementById('detail-panel');
+const pIco      = document.getElementById('p-ico');
+const pName     = document.getElementById('p-name');
+const pType     = document.getElementById('p-type');
+const pBody     = document.getElementById('p-body');
+let   activeNode = null;
+let   activeChip = null;
+
+function openPanel(id) {
+  const d = ND[id];
+  if (!d) return;
+  if (activeNode) activeNode.classList.remove('selected');
+  if (activeChip) { activeChip.classList.remove('ss-selected'); activeChip = null; }
+  activeNode = document.getElementById('n-' + id);
+  if (activeNode) activeNode.classList.add('selected');
+
+  pIco.textContent  = d.ico;
+  pName.textContent = d.name;
+  pType.textContent = d.type;
+
+  const detailHtml = d.s.map(sec => {
+    let html = `<div class="panel-section"><h3>${sec.h}</h3>`;
+    if (sec.kv) {
+      html += '<div class="kv-grid">';
+      sec.kv.forEach(([k, v]) => { html += `<span class="kv-k">${k}</span><span class="kv-v">${v}</span>`; });
+      html += '</div>';
+    }
+    if (sec.li) {
+      html += '<ul class="panel-list">';
+      sec.li.forEach(item => { html += `<li class="${item.c}">${item.t}</li>`; });
+      html += '</ul>';
+    }
+    return html + '</div>';
+  }).join('');
+
+  pBody.innerHTML = detailHtml + buildConnSection(id);
+
+  panel.classList.add('open');
+  highlightConns('n-' + id);
+}
+
+function closePanel() {
+  panel.classList.remove('open');
+  if (activeNode) { activeNode.classList.remove('selected'); activeNode = null; }
+  if (activeChip) { activeChip.classList.remove('ss-selected'); activeChip = null; }
+  resetConns();
+}
+
+document.getElementById('panel-close').addEventListener('click', closePanel);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+
+document.querySelectorAll('.node[data-node]').forEach(node => {
+  node.addEventListener('click', () => {
+    const id = node.dataset.node;
+    if (panel.classList.contains('open') && activeNode === node) closePanel();
+    else openPanel(id);
+  });
+});
+
+// ── VLAN chip selection ──────────────────────────────────────
+document.querySelectorAll('.ss-chip[data-vlan]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const vlanId = chip.dataset.vlan;
+    if (panel.classList.contains('open') && activeChip === chip) {
+      closePanel();
+    } else {
+      openVlanPanel(chip, vlanId);
+    }
+  });
+});
+
+function openVlanPanel(chipEl, vlanId) {
+  const d = ND['vlan-' + vlanId];
+  if (!d) return;
+
+  if (activeNode) activeNode.classList.remove('selected');
+  activeNode = null;
+  if (activeChip) activeChip.classList.remove('ss-selected');
+  activeChip = chipEl;
+  chipEl.classList.add('ss-selected');
+
+  pIco.textContent  = d.ico;
+  pName.textContent = d.name;
+  pType.textContent = d.type;
+
+  const detailHtml = d.s.map(sec => {
+    let html = `<div class="panel-section"><h3>${sec.h}</h3>`;
+    if (sec.kv) {
+      html += '<div class="kv-grid">';
+      sec.kv.forEach(([k, v]) => { html += `<span class="kv-k">${k}</span><span class="kv-v">${v}</span>`; });
+      html += '</div>';
+    }
+    if (sec.li) {
+      html += '<ul class="panel-list">';
+      sec.li.forEach(item => { html += `<li class="${item.c}">${item.t}</li>`; });
+      html += '</ul>';
+    }
+    return html + '</div>';
+  }).join('');
+
+  pBody.innerHTML = detailHtml + buildVlanConnSection(vlanId);
+
+  panel.classList.add('open');
+  highlightVlan(vlanId);
+}
+
+function highlightVlan(vlanId) {
+  const members = new Set();
+  for (const [nid, vlans] of Object.entries(NODE_VLAN)) {
+    if (vlans.includes(vlanId)) members.add(nid);
+  }
+
+  document.querySelectorAll('#conn-svg path').forEach(path => {
+    path.classList.remove('cl-active');
+    path.classList.add('cl-dim');
+  });
+
+  document.querySelectorAll('.node[data-node]').forEach(node => {
+    node.classList.toggle('conn-lit', members.has('n-' + node.dataset.node));
+  });
+
+  document.querySelectorAll('.ss-chip[data-vlan]').forEach(chip => {
+    chip.classList.toggle('ss-lit', chip.dataset.vlan === vlanId);
+  });
+
+  document.getElementById('topo-wrap').classList.add('has-selection');
+}
+
+// ── Connection definitions (Orthogonal + Corridor Routing) ───
+const CONNS = [
+  { a:'n-router',        b:'n-opnsense',      cls:'cl-phys', label:'Cat6 WAN-Uplink → pve-edge-01 PCIe Port 1 (vmbr1) — physisches WAN-Transitnetz in die OPNsense' },
+  { a:'n-opnsense',      b:'n-switch',        cls:'cl-phys', label:'pve-edge-01 PCIe Port 2 (vmbr2) → Switch Port 8 — 802.1Q VLAN-Trunk für VLAN 10/20/30/40/50/60' },
+  { a:'n-opnsense',      b:'n-technitium',    cls:'cl-net',  bSide:'horizontal', label:'Standard-Gateway 10.10.10.1 für Technitium DNS (10.10.10.XX) · mgmt VLAN DHCP + Firewall' },
+  { a:'n-opnsense',      b:'n-tailscale-lxc', cls:'cl-net',  bSide:'horizontal', label:'Standard-Gateway 10.10.10.1 für Tailscale Subnet Router LXC (10.10.10.XX) · SNAT-Routing in alle VLANs' },
+  { a:'n-opnsense',      b:'n-pve-hosts',     cls:'cl-net',  bSide:'horizontal', label:'Standard-Gateway 10.10.10.1 für pve-edge-01 & pve-data-01 (10.10.10.XX) · Management-VLAN 10' },
+  { a:'n-opnsense',      b:'n-homelab-site',  cls:'cl-net',  bSide:'top',        label:'Standard-Gateway 10.10.20.1 für homelab-site LXC (10.10.20.XX) · services VLAN DHCP + Firewall' },
+  { a:'n-opnsense',      b:'n-pbs',           cls:'cl-net',  bSide:'horizontal', label:'Standard-Gateway 10.10.20.1 für Proxmox Backup Server LXC (10.10.20.XX) · services VLAN' },
+  { a:'n-opnsense',      b:'n-docker',        cls:'cl-net',  bSide:'horizontal', label:'Standard-Gateway 10.10.20.1 für Docker Host LXC (10.10.20.XX) · services VLAN' },
+  { a:'n-opnsense',      b:'n-reports',       cls:'cl-net',  bSide:'top',        label:'Standard-Gateway 10.10.40.1 für agent40 VM (10.10.40.XX) · automation VLAN (Internet-only, Block RFC1918)' },
+  { a:'n-opnsense',      b:'n-clients',       cls:'cl-net',  bSide:'top',        label:'Standard-Gateway 10.10.30.1 für Admin-PC & Laptop (10.10.30.XX) · Hybrides Zero-Trust mit Admin-Freigaben' },
+  { a:'n-opnsense',      b:'n-nas',           cls:'cl-net',  bSide:'horizontal', label:'Standard-Gateway 10.10.50.1 für NAS/Storage (10.10.50.XX) · dediziertes Storage-VLAN' },
+  { a:'n-opnsense',      b:'n-iot',           cls:'cl-net',  bSide:'horizontal', label:'Standard-Gateway 10.10.60.1 für Smart-Home/IoT (10.10.60.XX) · strikt isoliert per Block RFC1918' },
+  { a:'n-technitium',    b:'n-opnsense',      cls:'cl-dns',  label:'Zentraler DNS-Resolver (10.10.10.XX) + Zone tre.internal (RFC 2136 DDNS) + Quad9 DoH — verteilt via OPNsense Kea DHCP' },
+  { a:'n-pve-hosts',     b:'n-switch',        cls:'cl-mgmt', aSide:'left',  bSide:'bottom', label:'Port 1 (pve-edge-01 Mgmt PVID 10) & Port 2 (pve-data-01 802.1Q Hybrid-Trunk)' },
+  { a:'n-pve-hosts',     b:'n-pbs',           cls:'cl-data', aSide:'right', bSide:'left',   label:'TLS :8007 Snapshot-Backups beider Server auf den PBS (pve-edge-01 & pve-data-01 → PBS)', arr:'arr-teal' },
+  { a:'n-tailscale',     b:'n-tailscale-lxc', cls:'cl-mgmt', aSide:'bottom', bSide:'left', corridor:'left',        label:'WireGuard-Tunnel zum entkoppelten Debian 13 Subnet Router LXC (10.10.10.XX) — bewirbt VLAN 10–60' },
+  { a:'n-reports',       b:'n-gemini-cli',    cls:'cl-data', label:'Cron-Skript startet rclone OneDrive-Mirror und übergibt Prompt an Gemini CLI' },
+  { a:'n-gemini-cli',    b:'n-msmtp',         cls:'cl-data', label:'Übergibt fertig gerendertes HTML-E-Mail-Briefing an den msmtp-Client' },
+  { a:'n-gemini-cli',    b:'n-gemini',        cls:'cl-data', aSide:'right',  bSide:'bottom', corridor:'right', label:'HTTPS :443 — Google Gemini API & OneDrive rclone Read-Only Vault-Sync', arr:'arr-teal' },
+  { a:'n-gemini-cli',    b:'n-openmeteo',     cls:'cl-data', aSide:'right',  bSide:'bottom', corridor:'right', label:'HTTPS :443 — 7-Tage- & Tages-Wettervorhersage (Open-Meteo REST-API)', arr:'arr-teal' },
+  { a:'n-msmtp',         b:'n-smtp',          cls:'cl-data', aSide:'right',  bSide:'bottom', corridor:'right', label:'SMTPS :465 (Implicit TLS) — versendet die HTML-Berichte an das Zielpostfach', arr:'arr-teal' },
+  { a:'n-github',        b:'n-ngrok',         cls:'cl-dep',  label:'GitHub Push-Webhook triggert Auto-Deploy bei jedem Push auf main', arr:'arr-yellow' },
+  { a:'n-ngrok',         b:'n-webhook',       cls:'cl-dep',  label:'Geplant: ausgehender HTTPS-Tunnel (:443) leitet den Webhook an localhost:3000 weiter' },
+  { a:'n-webhook',       b:'n-reports',       cls:'cl-dep',  label:'HMAC-SHA256 & Rate-Limit geprüft → führt git -C /opt/agent40 pull (SSH :443) aus', arr:'arr-yellow' },
+  { a:'n-homelab-site',  b:'n-github',        cls:'cl-dep',  aSide:'top',    bSide:'bottom', label:'git pull über repo-gebundenen Read-Only Deploy Key via ssh.github.com:443', arr:'arr-yellow' },
+];
+
+// ── SVG-Routing & Pfad-Berechnung ────────────────────────────
+function getRect(el, wrap) {
+  const er = el.getBoundingClientRect();
+  const wr = wrap.getBoundingClientRect();
+  return {
+    x:  er.left - wr.left,
+    y:  er.top  - wr.top,
+    w:  er.width,
+    h:  er.height,
+    cx: er.left - wr.left + er.width  / 2,
+    cy: er.top  - wr.top  + er.height / 2,
+  };
+}
+
+function pickSide(rect, tx, ty) {
+  const dx = tx - rect.cx;
+  const dy = ty - rect.cy;
+  if (dx === 0 && dy === 0) return 'bottom';
+  const slope = Math.abs(dy / (dx === 0 ? 0.0001 : dx));
+  const edgeSlope = rect.h / rect.w;
+  if (slope <= edgeSlope) return dx > 0 ? 'right' : 'left';
+  return dy > 0 ? 'bottom' : 'top';
+}
+
+function resolveSide(hint, atRect, otherRect) {
+  if (!hint) return pickSide(atRect, otherRect.cx, otherRect.cy);
+  if (hint === 'horizontal') return (otherRect.cx > atRect.cx) ? 'right' : 'left';
+  if (hint === 'vertical')   return (otherRect.cy > atRect.cy) ? 'bottom' : 'top';
+  if (hint === 'top' || hint === 'bottom' || hint === 'left' || hint === 'right') return hint;
+  return pickSide(atRect, otherRect.cx, otherRect.cy);
+}
+
+function pointOnSide(rect, side, t) {
+  const inset = (side === 'top' || side === 'bottom') ? 0.12 : 0.2;
+  const u = inset + t * (1 - 2 * inset);
+  switch (side) {
+    case 'top':    return { x: rect.x + u * rect.w, y: rect.y,             dir: 'top' };
+    case 'bottom': return { x: rect.x + u * rect.w, y: rect.y + rect.h,    dir: 'bottom' };
+    case 'left':   return { x: rect.x,              y: rect.y + u * rect.h, dir: 'left' };
+    case 'right':  return { x: rect.x + rect.w,     y: rect.y + u * rect.h, dir: 'right' };
+  }
+}
+
+function corridorPath(p1, p2, corridorX) {
+  const vDir = d => ({ top:[0,-1], bottom:[0,1], left:[-1,0], right:[1,0] }[d] || [0,1]);
+  const stub = 14;
+  const [vx1, vy1] = vDir(p1.dir);
+  const [vx2, vy2] = vDir(p2.dir);
+  const s1x = p1.x + vx1*stub, s1y = p1.y + vy1*stub;
+  const s2x = p2.x + vx2*stub, s2y = p2.y + vy2*stub;
+
+  const points = [
+    [p1.x, p1.y],
+    [s1x, s1y],
+    [corridorX, s1y],
+    [corridorX, s2y],
+    [s2x, s2y],
+    [p2.x, p2.y],
+  ];
+  return roundedPolyline(points, 6);
+}
+
+function perimeterPath(p1, p2, leftX, bottomY) {
+  const vDir = d => ({ top:[0,-1], bottom:[0,1], left:[-1,0], right:[1,0] }[d] || [0,1]);
+  const stub = 14;
+  const [vx1, vy1] = vDir(p1.dir);
+  const [vx2, vy2] = vDir(p2.dir);
+  const s1x = p1.x + vx1*stub, s1y = p1.y + vy1*stub;
+  const s2x = p2.x + vx2*stub, s2y = p2.y + vy2*stub;
+
+  const points = [
+    [p1.x, p1.y],
+    [s1x, s1y],
+    [leftX, s1y],
+    [leftX, bottomY],
+    [s2x, bottomY],
+    [s2x, s2y],
+    [p2.x, p2.y],
+  ];
+  return roundedPolyline(points, 6);
+}
+
+function orthPath(p1, p2) {
+  const stub = 14;
+  const vDir = d => ({ top:[0,-1], bottom:[0,1], left:[-1,0], right:[1,0] }[d] || [0,1]);
+  const [vx1, vy1] = vDir(p1.dir);
+  const [vx2, vy2] = vDir(p2.dir);
+  const s1x = p1.x + vx1 * stub, s1y = p1.y + vy1 * stub;
+  const s2x = p2.x + vx2 * stub, s2y = p2.y + vy2 * stub;
+  const v1 = (p1.dir === 'top' || p1.dir === 'bottom');
+  const v2 = (p2.dir === 'top' || p2.dir === 'bottom');
+
+  const corners = [];
+  corners.push([p1.x, p1.y]);
+  corners.push([s1x, s1y]);
+
+  if (v1 && v2) {
+    const midY = (s1y + s2y) / 2;
+    corners.push([s1x, midY]);
+    corners.push([s2x, midY]);
+  } else if (!v1 && !v2) {
+    const midX = (s1x + s2x) / 2;
+    corners.push([midX, s1y]);
+    corners.push([midX, s2y]);
+  } else if (v1) {
+    corners.push([s1x, s2y]);
+  } else {
+    corners.push([s2x, s1y]);
+  }
+
+  corners.push([s2x, s2y]);
+  corners.push([p2.x, p2.y]);
+
+  return roundedPolyline(corners, 6);
+}
+
+function roundedPolyline(pts, radius) {
+  const uniq = pts.filter((p, i) => i === 0 || p[0] !== pts[i-1][0] || p[1] !== pts[i-1][1]);
+  if (uniq.length < 2) return '';
+  if (uniq.length === 2) {
+    return `M ${uniq[0][0]} ${uniq[0][1]} L ${uniq[1][0]} ${uniq[1][1]}`;
+  }
+  let d = `M ${uniq[0][0]} ${uniq[0][1]}`;
+  for (let i = 1; i < uniq.length - 1; i++) {
+    const [px, py] = uniq[i - 1];
+    const [cx, cy] = uniq[i];
+    const [nx, ny] = uniq[i + 1];
+    const len1 = Math.hypot(cx - px, cy - py);
+    const len2 = Math.hypot(nx - cx, ny - cy);
+    const r = Math.min(radius, len1 * 0.5, len2 * 0.5);
+    if (r < 1.5 || len1 === 0 || len2 === 0) {
+      d += ` L ${cx} ${cy}`;
+      continue;
+    }
+    const ux1 = (cx - px) / len1, uy1 = (cy - py) / len1;
+    const ux2 = (nx - cx) / len2, uy2 = (ny - cy) / len2;
+    const bx = cx - ux1 * r, by = cy - uy1 * r;
+    const ax = cx + ux2 * r, ay = cy + uy2 * r;
+    d += ` L ${bx} ${by} Q ${cx} ${cy} ${ax} ${ay}`;
+  }
+  const last = uniq[uniq.length - 1];
+  d += ` L ${last[0]} ${last[1]}`;
+  return d;
+}
+
+function drawConns() {
+  const svg  = document.getElementById('conn-svg');
+  const wrap = document.getElementById('topo-wrap');
+  if (!svg || !wrap) return;
+  const w = Math.max(wrap.scrollWidth,  wrap.clientWidth);
+  const h = Math.max(wrap.scrollHeight, wrap.clientHeight);
+  svg.setAttribute('width',  w);
+  svg.setAttribute('height', h);
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.style.width  = w + 'px';
+  svg.style.height = h + 'px';
+  [...svg.querySelectorAll('path')].forEach(p => p.remove());
+
+  const rects = {};
+  CONNS.forEach(({ a, b }) => {
+    [a, b].forEach(id => {
+      if (!rects[id]) {
+        const el = document.getElementById(id);
+        if (el) rects[id] = getRect(el, wrap);
+      }
+    });
+  });
+
+  const buckets = {};
+  const processed = CONNS.map((conn, ci) => {
+    const ra = rects[conn.a], rb = rects[conn.b];
+    if (!ra || !rb) return null;
+    const aSide = resolveSide(conn.aSide, ra, rb);
+    const bSide = resolveSide(conn.bSide, rb, ra);
+    const itm = { conn, ci, aSide, bSide };
+    if (!buckets[conn.a])        buckets[conn.a] = {};
+    if (!buckets[conn.a][aSide]) buckets[conn.a][aSide] = [];
+    buckets[conn.a][aSide].push({ itm, end: 'a', target: { cx: rb.cx, cy: rb.cy } });
+    if (!buckets[conn.b])        buckets[conn.b] = {};
+    if (!buckets[conn.b][bSide]) buckets[conn.b][bSide] = [];
+    buckets[conn.b][bSide].push({ itm, end: 'b', target: { cx: ra.cx, cy: ra.cy } });
+    return itm;
+  });
+
+  const slice = {};
+  for (const nid in buckets) {
+    for (const side in buckets[nid]) {
+      const list = buckets[nid][side];
+      const horiz = (side === 'top' || side === 'bottom');
+      list.sort((p, q) => horiz ? p.target.cx - q.target.cx : p.target.cy - q.target.cy);
+      const n = list.length;
+      list.forEach((entry, idx) => {
+        const t = n === 1 ? 0.5 : idx / (n - 1);
+        const ci = entry.itm.ci;
+        if (!slice[ci]) slice[ci] = {};
+        slice[ci][entry.end] = t;
+      });
+    }
+  }
+
+  const LANE_SPACING = 12;
+  const corridorLane = {};
+  let contentMinX = w, contentMaxX = 0, contentMaxY = 0;
+  for (const id in rects) {
+    contentMinX = Math.min(contentMinX, rects[id].x);
+    contentMaxX = Math.max(contentMaxX, rects[id].x + rects[id].w);
+    contentMaxY = Math.max(contentMaxY, rects[id].y + rects[id].h);
+  }
+  const leftAnchor   = Math.max(15, contentMinX - 22);
+  const rightAnchor  = Math.min(w - 15, contentMaxX + 22);
+  const bottomAnchor = Math.min(h - 15, contentMaxY + 28);
+
+  const leftCorridorItems  = processed.filter(itm => itm && itm.conn.corridor === 'left')
+                                      .sort((a,b) => rects[a.conn.a].cy - rects[b.conn.a].cy);
+  const rightCorridorItems = processed.filter(itm => itm && itm.conn.corridor === 'right')
+                                      .sort((a,b) => rects[a.conn.a].cy - rects[b.conn.a].cy);
+  const perimeterItems     = processed.filter(itm => itm && itm.conn.corridor === 'left-bottom')
+                                      .sort((a,b) => rects[a.conn.a].cy - rects[b.conn.a].cy);
+
+  leftCorridorItems.forEach((itm, i) => {
+    corridorLane[itm.ci] = Math.max(8, leftAnchor - i * LANE_SPACING);
+  });
+  rightCorridorItems.forEach((itm, i) => {
+    corridorLane[itm.ci] = Math.min(w - 8, rightAnchor + i * LANE_SPACING);
+  });
+  perimeterItems.forEach((itm, i) => {
+    corridorLane[itm.ci] = Math.max(8, leftAnchor - (leftCorridorItems.length + i + 1) * LANE_SPACING);
+  });
+
+  processed.forEach(itm => {
+    if (!itm) return;
+    const { conn, ci, aSide, bSide } = itm;
+    const s = slice[ci] || {};
+    const p1 = pointOnSide(rects[conn.a], aSide, s.a ?? 0.5);
+    const p2 = pointOnSide(rects[conn.b], bSide, s.b ?? 0.5);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    let d;
+    if (conn.corridor === 'left-bottom') {
+      d = perimeterPath(p1, p2, corridorLane[ci], bottomAnchor);
+    } else if (corridorLane[ci] !== undefined) {
+      d = corridorPath(p1, p2, corridorLane[ci]);
+    } else {
+      d = orthPath(p1, p2);
+    }
+    path.setAttribute('d', d);
+    path.setAttribute('class', 'cl ' + conn.cls);
+    path.setAttribute('data-i', ci);
+    path.setAttribute('data-a', conn.a);
+    path.setAttribute('data-b', conn.b);
+    if (conn.arr) path.setAttribute('marker-end', `url(#${conn.arr})`);
+    svg.appendChild(path);
+  });
+
+  if (activeNode) highlightConns('n-' + activeNode.dataset.node);
+}
+
+// ── Connection highlighting ───────────────────────────────────
+function highlightConns(nodeId) {
+  clearShowAll();
+  const lit = new Set([nodeId]);
+  CONNS.forEach(c => {
+    if (c.a === nodeId) lit.add(c.b);
+    if (c.b === nodeId) lit.add(c.a);
+  });
+
+  document.querySelectorAll('#conn-svg path').forEach(path => {
+    const connected = path.getAttribute('data-a') === nodeId || path.getAttribute('data-b') === nodeId;
+    path.classList.toggle('cl-active', connected);
+    path.classList.toggle('cl-dim',    !connected);
+  });
+
+  document.querySelectorAll('.node[data-node]').forEach(node => {
+    node.classList.toggle('conn-lit', lit.has('n-' + node.dataset.node));
+  });
+
+  const myVlans = new Set(NODE_VLAN[nodeId] || []);
+  document.querySelectorAll('.ss-chip[data-vlan]').forEach(chip => {
+    chip.classList.toggle('ss-lit', myVlans.has(chip.dataset.vlan));
+  });
+
+  document.getElementById('topo-wrap').classList.add('has-selection');
+}
+
+function resetConns() {
+  document.querySelectorAll('#conn-svg path').forEach(p => p.classList.remove('cl-active', 'cl-dim'));
+  document.querySelectorAll('.node').forEach(n => n.classList.remove('conn-lit'));
+  document.querySelectorAll('.ss-chip').forEach(c => c.classList.remove('ss-lit'));
+  document.getElementById('topo-wrap')?.classList.remove('has-selection');
+  clearShowAll();
+}
+
+// ── "Show all connections" toggle ─────────────────────────────
+function showAllConns() {
+  document.querySelectorAll('#conn-svg path').forEach(p => {
+    p.classList.add('cl-active');
+    p.classList.remove('cl-dim');
+  });
+  document.querySelectorAll('.node[data-node]').forEach(n => n.classList.add('conn-lit'));
+  document.querySelectorAll('.ss-chip[data-vlan]').forEach(c => c.classList.add('ss-lit'));
+  document.getElementById('topo-wrap')?.classList.add('has-selection');
+  const btn = document.getElementById('show-all-conns');
+  if (btn) { btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true'); btn.textContent = 'Ansicht zurücksetzen'; }
+}
+
+function clearShowAll() {
+  const btn = document.getElementById('show-all-conns');
+  if (btn) { btn.classList.remove('active'); btn.setAttribute('aria-pressed', 'false'); btn.textContent = 'Alle Verbindungen anzeigen'; }
+}
+
+document.getElementById('show-all-conns')?.addEventListener('click', () => {
+  const btn = document.getElementById('show-all-conns');
+  if (btn.classList.contains('active')) {
+    resetConns();
+  } else {
+    if (panel.classList.contains('open')) closePanel();
+    showAllConns();
+  }
+});
+
+// ── Build "Devices on this VLAN" section ──────────────────────
+const VLAN_ROLES = {
+  v10: {
+    'n-opnsense':      'Gateway 10.10.10.1 · DHCP · Firewall + Zenarmor DPI',
+    'n-switch':        'Port 1 & 2 (PVID 10) + Port 8 Trunk (Tag 10)',
+    'n-tailscale-lxc': 'Resident · routet 10.10.10.0/24 bis 10.10.60.0/24 ins Tailnet',
+    'n-technitium':    'Resident · zentraler DNS-Resolver (10.10.10.XX) + Zone tre.internal für alle VLANs',
+    'n-pve-hosts':     'Resident · pve-edge-01 & pve-data-01 Management-GUIs (:8006)',
+  },
+  v20: {
+    'n-opnsense':      'Gateway 10.10.20.1 · DHCP · Firewall (Block RFC1918)',
+    'n-switch':        'Trunkt Tag 20 auf Port 2 (pve-data-01) & Port 8 (OPNsense)',
+    'n-tailscale-lxc': 'Bewirbt 10.10.20.0/24 im Tailnet',
+    'n-homelab-site':  'Resident · nginx Webserver für http://map.tre.internal',
+    'n-pbs':           'Resident · Proxmox Backup Server (:8007 Cross-Node Snapshots)',
+    'n-docker':        'Resident · Docker Host (LXC 100)',
+  },
+  v30: {
+    'n-opnsense':      'Gateway 10.10.30.1 · DHCP · Hybride Zero-Trust-Freigaben',
+    'n-switch':        'Access-Port 3 (Untagged PVID 30) + Trunk Port 8',
+    'n-tailscale-lxc': 'Bewirbt 10.10.30.0/24 im Tailnet',
+    'n-clients':       'Resident · Admin-Workstation & Arbeits-Laptop',
+  },
+  v40: {
+    'n-opnsense':      'Gateway 10.10.40.1 · DHCP · Firewall (Internet-only Egress)',
+    'n-switch':        'Trunkt Tag 40 auf Port 2 (pve-data-01) & Port 8 (OPNsense)',
+    'n-tailscale-lxc': 'Bewirbt 10.10.40.0/24 im Tailnet',
+    'n-reports':       'Resident in agent40 VM · Cron-gesteuerte Berichte',
+    'n-gemini-cli':    'Resident in agent40 VM · Google Gemini CLI + rclone Mirror',
+    'n-msmtp':         'Resident in agent40 VM · SMTP-Client (:465 Implicit TLS)',
+    'n-ngrok':         'agent40 VM · ausgehender HTTPS-Tunnel (:443), noch nicht aktiv',
+    'n-webhook':       'Resident in agent40 VM · HMAC-SHA256 Auto-Deploy Listener (:3000)',
+  },
+  v50: {
+    'n-opnsense':      'Gateway 10.10.50.1 · Firewall (isoliertes Storage-Netz)',
+    'n-switch':        'Trunkt Tag 50 auf Port 2 & Port 8',
+    'n-tailscale-lxc': 'Bewirbt 10.10.50.0/24 im Tailnet',
+    'n-nas':           'Resident · JMicron JMB58x 5-Port SATA Storage-Target',
+  },
+  v60: {
+    'n-opnsense':      'Gateway 10.10.60.1 · DHCP · Firewall (Striktes Block RFC1918)',
+    'n-switch':        'Access-Ports 4 & 5 (Untagged PVID 60) + Trunk Port 8',
+    'n-tailscale-lxc': 'Bewirbt 10.10.60.0/24 im Tailnet',
+    'n-iot':           'Resident · Philips Hue Bridge, IP-Kamera & Smart-TV',
+  },
+};
+
+function memberColor(nid) {
+  if (nid === 'n-opnsense')      return 'var(--red)';
+  if (nid === 'n-switch')        return 'var(--purple)';
+  if (nid === 'n-tailscale-lxc') return 'var(--blue)';
+  return 'var(--yellow)';
+}
+
+const MEMBER_ORDER = [
+  'n-opnsense','n-switch','n-tailscale-lxc',
+  'n-technitium','n-pve-hosts',
+  'n-homelab-site','n-pbs','n-docker',
+  'n-clients','n-reports','n-gemini-cli','n-msmtp','n-ngrok','n-webhook',
+  'n-nas','n-iot',
+];
+
+function buildVlanConnSection(vlanId) {
+  const roleMap = VLAN_ROLES[vlanId] || {};
+  const members = MEMBER_ORDER.filter(nid =>
+    (NODE_VLAN[nid] || []).includes(vlanId)
+  );
+  if (!members.length) return '';
+
+  const rows = members.map(nid => {
+    const node  = NODE_NAMES[nid] || { name: nid, ico: '?' };
+    const role  = roleMap[nid] || 'Mitglied in diesem VLAN';
+    const color = memberColor(nid);
+    return `<div class="conn-item">
+      <div class="conn-dot" style="background:${color};box-shadow:0 0 5px ${color}"></div>
+      <div class="conn-info">
+        <span class="conn-name">${node.ico} ${node.name}</span>
+        <span class="conn-desc">${role}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="panel-section"><h3>Systeme in diesem VLAN</h3><div class="conn-list">${rows}</div></div>`;
+}
+
+function buildConnSection(nodeId) {
+  const fullId = 'n-' + nodeId;
+  const relevant = CONNS.filter(c => c.a === fullId || c.b === fullId);
+  if (!relevant.length) return '';
+
+  const rows = relevant.map(c => {
+    const isSource = c.a === fullId;
+    const otherId  = isSource ? c.b : c.a;
+    const other    = NODE_NAMES[otherId] || { name: otherId, ico: '?' };
+    const meta     = CLS_META[c.cls]    || { color: 'var(--muted)', label: '' };
+    const arrow    = isSource ? '→' : '←';
+    return `<div class="conn-item">
+      <div class="conn-dot" style="background:${meta.color};box-shadow:0 0 5px ${meta.color}"></div>
+      <span class="conn-arrow" style="color:${meta.color}">${arrow}</span>
+      <div class="conn-info">
+        <span class="conn-name">${other.ico} ${other.name}</span>
+        <span class="conn-desc">${c.label}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="panel-section"><h3>Verbindungen</h3><div class="conn-list">${rows}</div></div>`;
+}
+
+window.addEventListener('load', () => setTimeout(drawConns, 120));
+new ResizeObserver(() => drawConns()).observe(document.getElementById('topo-wrap') || document.body);
+</script>
+</body>
+</html>

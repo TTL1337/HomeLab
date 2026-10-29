@@ -1,0 +1,25 @@
+# ============================================================================
+# STRICT WHITELIST MODE (Default Deny)
+# Blockiert standardmäßig JEDE Datei und JEDEN Ordner im Repository (*).
+# Nur explizit mit '!' freigegebene Dateien können jemals von Git erfasst werden.
+# ============================================================================
+
+# 1. DEFAULT DENY: Alles im Root-Verzeichnis sperren
+*
+
+# 2. WHITELIST: Ausschließlich diese 4 öffentlichen Portfolio-Dateien erlauben
+!.gitignore
+
+!.github/
+.github/*
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/pages.yml
+
+!docs/
+docs/*
+!docs/README.md
+
+!site/
+site/*
+!site/index.html
